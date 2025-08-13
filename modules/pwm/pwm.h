@@ -6,7 +6,7 @@
 #include "pin.h"
 
 class PWM final : public Module {
-  pwmout_t pwm_pin;  // PWM out object
+  PwmOut *pwm_pin;  // PWM out object
 
   volatile int32_t *set_duty_cycle;
 

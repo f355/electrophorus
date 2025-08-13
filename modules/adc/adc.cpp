@@ -2,11 +2,10 @@
 
 ADC::ADC(const int var_number, Pin* pin, volatile txData_t* tx_data)
     : variable(&tx_data->input_vars[var_number]),
-      adc(),
+      adc(new AnalogIn(pin->as_input()->to_pin_name())),
       run_every(20),  // run every 20 timer ticks
       counter(run_every) {
   // Take some readings to get the ADC up and running before moving on
-  analogin_init(&this->adc, pin->as_input()->to_pin_name());
   this->run();
   this->run();
 }
@@ -14,6 +13,6 @@ ADC::ADC(const int var_number, Pin* pin, volatile txData_t* tx_data)
 void ADC::run() {
   if (--this->counter == 0) {
     this->counter = run_every;
-    *this->variable = analogin_read_u16(&this->adc);
+    *this->variable = this->adc->read_u16();
   }
 }

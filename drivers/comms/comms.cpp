@@ -9,10 +9,8 @@ Comms::Comms()
       rx_memcpy_dma2(new MODDMA_Config()),
       rx_data(new rxData_t()),
       tx_data(new txData_t()) {
-  spi_t spi;  // allocated on stack - we need to initialize the peripheral, the rest happens with DMA
-  spi_init(&spi, SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
-  spi_format(&spi, 8, 0, 1);     // 8 bits/word, mode 0, slave
-  spi_frequency(&spi, 1000000);  // shouldn't be needed for a slave
+  // just initialize the peripheral, the communication is done through DMA
+  new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 }
 
 void Comms::init() {
@@ -78,7 +76,7 @@ void Comms::start() {
   dma.Prepare(rx_dma1);
   dma.Prepare(tx_dma1);
 
-  // Enable SSP1 for DMA
+  // Enable SSP0 for DMA
   LPC_SSP0->DMACR = 0;
   LPC_SSP0->DMACR = 1 << 1 | 1 << 0;  // TX,RX DMA Enable
 }
