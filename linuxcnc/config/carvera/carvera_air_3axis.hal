@@ -5,8 +5,10 @@ loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EM
 
 loadrt electrophorus
 loadrt scale names=scale.spindle-gain,scale.spindle-fb
+loadrt lowpass names=lowpass.spindle-fb
 loadrt ddt names=ddt.spindle-fb
-loadrt thermistor names=therm.power,therm.spindle
+
+#loadusr thermistor count=2 # names=therm.power,therm.spindle
 
 # estop loopback, SPI comms enable and feedback
 net user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-12v => carvera.output.power-24v
@@ -20,6 +22,7 @@ addf motion-command-handler servo-thread
 addf motion-controller servo-thread
 addf scale.spindle-gain servo-thread
 addf scale.spindle-fb servo-thread
+addf lowpass.spindle-fb servo-thread
 addf ddt.spindle-fb servo-thread
 addf carvera.update-freq servo-thread
 addf carvera.write servo-thread
@@ -28,15 +31,17 @@ setp carvera.output.work-light true
 
 ######## spindle
 
-# output - 0.07 scale factor should give 91% or 910 per mil duty at 13k RPM
-setp scale.spindle-gain.gain 0.07
+# output - 0.0583 scale factor gives the right duty cycle at 13k RPM
+setp scale.spindle-gain.gain 0.0583
 net spindle-speed-scale spindle.0.speed-out => scale.spindle-gain.in
-net spindle-speed-pwm scale.spindle-gain.out => carvera.output_vars.spindle-duty
+net spindle-speed-pwm scale.spindle-gain.out => carvera.output-var.spindle-duty
 
 # feedback - two pulses/rev
 setp scale.spindle-fb.gain 0.5
-net spindle-feedback-scale carvera.input_vars.spindle-feedback => scale.spindle-fb.in
-net spindle-feedback-ddt scale.spindle-fb.out => ddt.spindle-fb.in => spindle.0.revs
+setp lowpass.spindle-fb.gain 0.5
+net spindle-feedback-scale carvera.input-var.spindle-feedback => scale.spindle-fb.in
+net spindle-feedback-lowpass scale.spindle-fb.out => lowpass.spindle-fb.in => spindle.0.revs
+net spindle-feedback-ddt lowpass.spindle-fb.out => ddt.spindle-fb.in
 net spindle-feedback-vel ddt.spindle-fb.out => spindle.0.speed-in
 
 # alarm
@@ -83,30 +88,30 @@ net z-home carvera.input.endstop-z => joint.2.home-sw-in => joint.2.neg-lim-sw-i
 #net z-alarm carvera.input.stall-alarm-z => joint.2.amp-fault-in
 
 # 3/A
-setp carvera.joint.3.scale [JOINT_3]SCALE
-setp carvera.joint.3.maxvel [JOINT_3]STEPGEN_MAXVEL
-setp carvera.joint.3.maxaccel [JOINT_3]STEPGEN_MAXACCEL
-setp carvera.joint.3.pgain [JOINT_3]PGAIN
-setp carvera.joint.3.ff1gain [JOINT_3]FF1GAIN
+# setp carvera.joint.3.scale [JOINT_3]SCALE
+# setp carvera.joint.3.maxvel [JOINT_3]STEPGEN_MAXVEL
+# setp carvera.joint.3.maxaccel [JOINT_3]STEPGEN_MAXACCEL
+# setp carvera.joint.3.pgain [JOINT_3]PGAIN
+# setp carvera.joint.3.ff1gain [JOINT_3]FF1GAIN
 
-net a-pos-cmd joint.3.motor-pos-cmd => carvera.joint.3.pos-cmd
-net a-pos-fb carvera.joint.3.pos-fb => joint.3.motor-pos-fb
-net a-enable joint.3.amp-enable-out => carvera.joint.3.enable => carvera.output.axis-enable-a
-net a-home carvera.input.endstop-a => joint.3.home-sw-in
+# net a-pos-cmd joint.3.motor-pos-cmd => carvera.joint.3.pos-cmd
+# net a-pos-fb carvera.joint.3.pos-fb => joint.3.motor-pos-fb
+# net a-enable joint.3.amp-enable-out => carvera.joint.3.enable => carvera.output.axis-enable-a
+# net a-home carvera.input.endstop-a => joint.3.home-sw-in
 
 ######## thermistors and fan control
 # power supply
-setp therm.power.r0 [THERM_POWER]R0
-setp therm.r-other [THERM_POWER]R_OTHER
-setp therm.power.beta [THERM_POWER]BETA
-setp therm.power.t0-c [THERM_POWER]T0
-setp therm.v-total [THERM_POWER]V_TOTAL
-net therm-power-in carvera.input-var.power-supply-temperature => therm.power.v-thermistor
+#setp thermistor.0.r0 [THERM_POWER]R0
+#setp thermistor.0.r-other [THERM_POWER]R_OTHER
+#setp thermistor.0.beta [THERM_POWER]BETA
+#setp thermistor.0.t0-c [THERM_POWER]T0
+#setp thermistor.0.v-total [THERM_POWER]V_TOTAL
+# net therm-power-in carvera.input-var.power-supply-temperature => thermistor.0.v-thermistor
 
 # spindle
-setp therm.spindle.r0 [THERM_SPINDLE]R0
-setp therm.r-other [THERM_SPINDLE]R_OTHER
-setp therm.spindle.beta [THERM_SPINDLE]BETA
-setp therm.spindle.t0-c [THERM_SPINDLE]T0
-setp therm.v-total [THERM_SPINDLE]V_TOTAL
-net therm-spindle-in carvera.input-var.spindle-temperature => therm.spindle.v-thermistor
+#setp thermistor.1.r0 [THERM_SPINDLE]R0
+#setp thermistor.1.r-other [THERM_SPINDLE]R_OTHER
+#setp thermistor.1.beta [THERM_SPINDLE]BETA
+#setp thermistor.1.t0-c [THERM_SPINDLE]T0
+#setp thermistor.1.v-total [THERM_SPINDLE]V_TOTAL
+# net therm-spindle-in carvera.input-var.spindle-temperature => thermistor.1.v-thermistor
