@@ -23,13 +23,27 @@ endif ()
 
 add_subdirectory(mbed-os)
 
-add_subdirectory(drivers)
-add_subdirectory(thread)
-add_subdirectory(modules)
-add_subdirectory(machine_config)
+add_subdirectory(lib/MODDMA)
 
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(${PROJECT_NAME}
+        src/main.cpp
+        src/lpc_timer.cpp
+        src/machine_config.cpp
+        src/module.cpp
+        src/modules/adc/adc.cpp
+        src/modules/e_stop/e_stop.cpp
+        src/modules/gpio/digitalIns.cpp
+        src/modules/gpio/digitalOuts.cpp
+        src/modules/pulse_counter/pulse_counter.cpp
+        src/modules/pwm/pwm.cpp
+        src/modules/stepgen/stepgen.cpp
+        src/pin.cpp
+        src/pru_thread.cpp
+        src/spi_comms.cpp
+)
 
-target_link_libraries(${PROJECT_NAME} mbed-baremetal epho-thread epho-machine-config)
+target_include_directories(${PROJECT_NAME} PUBLIC . src include)
+
+target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
 
 mbed_set_post_build(${PROJECT_NAME})
