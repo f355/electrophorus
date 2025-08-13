@@ -1,16 +1,22 @@
 # electrophorus
 
-**WARNING: The author(s) assume absolutely no responsibility for any damage
-that might occur as a result of following the instructions below. This project is currently still is heavily work in
-progress (almost nothing works!) and would work only on Carvera Air. Your warranty might no longer be valid since the
-project requires physically modifying the machine's mainboard. DO NOT TRY THIS AT HOME unless you understand what you're
-doing and are willing to deal with the issues and fix the bugs yourself (I might help with that, though).**
+**WARNING: The author(s) assume absolutely no responsibility for any damage and/or disappointment that might occur as a
+result of following the instructions below. This project is currently still is heavily work in progress (almost nothing
+works!) and would work only on Carvera Air. DO NOT TRY THIS AT HOME unless you understand what you're doing and are
+willing to deal with the issues and fix the bugs yourself (I might help with that, though).**
 
 Electrophorus is a project that allows you to convert a Carvera-family desktop CNC milling machine
 by [Makera Inc.](https://www.makera.com/)
 to use [LinuxCNC](https://linuxcnc.org/) as a controller with the help of
-a [Raspberry Pi](https://www.raspberrypi.com/). I (@f355) don't have the big-brother Carvera (C1), so for now it is
-supposed to only work (or not) with Carvera Air (CA1).
+a [Raspberry Pi](https://www.raspberrypi.com/).
+
+It works by offloading the realtime functions (pulsing the motor drivers) to the Carvera board/firmware, while the
+computation-heavy parts (G code parsing, trajectory planning, motion control, etc.) are handled by LinuxCNC running on
+the Raspberry Pi. If you're familiar with LinuxCNC concepts, the Carvera board acts as a Programmable Realtime Unit
+(PRU) on BeagleBone or a limited version of a Mesa card.
+
+I (@f355) don't have the big-brother Carvera (C1), so for now it is supposed to only work (or not) with
+Carvera Air (CA1).
 
 The project has started as a fork of the fantastic [Remora](https://github.com/scottalford75/Remora) project. The Remora
 authors [say they "dont ...not support"](https://github.com/scottalford75/Remora/issues/78#issuecomment-2584956914)
@@ -21,98 +27,84 @@ pretty much rewritten.
 
 The communication between the machine's board and the Raspberry Pi is done over the SPI bus. Unfortunately, both SSP/SPI
 interfaces on the board are populated - SSP0 by the SD card and SSP1 by the ESP8266-based Wi-Fi module. We won't need
-the latter, so we can modify the board to disable it and free up the bus. Conveniently, the module also provides vias to
-solder a pin header into, with both SPI pins and power and ground connections for enabling/disabling the Wi-Fi module
-and an extra MCU pin to use for the board reset/out-of-band communication.
+either of those things, so we'll be plugging into the MicroSD port directly using a very cursed-looking cable. It is
+possible to use the WiFi module pins too, but it is much harder since it requires physically modifying the board.
 
 You'll need the following:
 
-1. Carvera Air itself, obviously
-2. Raspberry Pi 4B (5 might work too, but it is untested) with a suitable power supply and a MicroSD card
-3. MicroSD card reader
-4. Good soldering iron/station and decent soldering skills, microscope or loupe is recommended, as well as other
-   soldering accoutrements.
-5. Cabling components:
-    * Female Dupont pin header connectors compatible with the Raspberry Pi. A single 40-pin connector for the Pi is
-      highly recommended. You'll also need a pair of single-pin connectors for the optional ground, if you choose to
-      connect it.
-    * 2mm pitch by 0.5mm pin size pin header, male for the Wi-Fi PCB (7 pins) and female for the cables (5 pins + 1 pin)
-    * 4-pin female JST XH connector for the UART port. You should have one left over from wiring up
-      the [3D probe](https://www.instructables.com/Carvera-Touch-Probe-Modifications/) :)
-    * regular through-hole 10k resistor, brown-black-orange (anything from 4.7k to 100k should work too, but it's
-      untested)
-    * wires to tie it all together, of a suitable gauge
-
-### Modifying the board
-
-1. READ THESE INSTRUCTIONS TO THE END before attempting anything.
-2. Remove the 0402 10k Ohm pull-up resistor from the ESP8266's `CHIP_EN` pin. It is marked in red on the
-   picture:
-
-![Resistor location](images/resistor_location.jpg)
-
-3. Prepare the `CHIP_EN` wire: solder the through-hole 10k resistor in-line and heat-shrink it, tin one end, attach the
-   single-pin 2mm-pitch female connector to the other.
-4. Solder the wire you've just made to the LEFT (closer to the USB ports) pad of the resistor location as on the
-   picture below. The pad is rather small and weak, so to avoid breaking the wire off or, worse, lifting the pad when
-   installing the board back in the machine, you'll need a strain relief. Carefully bend the wire towards the PCB
-   antenna portion of the WiFi module, optionally - especially if your wires have silicone insulation like mine - put a
-   small rectangle of cloth or shop towel on top of it, hold the wire down and wick some CA glue between the wire and
-   the PCB and in the cloth - it should look like the picture. Don't overdo it with the
-   glue.
-
-![Resistor wire](images/resistor_wire.jpg)
-
-5. Solder the 7-pin 2mm-pitch pin header in the holes on top of the Wi-Fi module. You won't have access to the back of
-   the PCB, the holes are blind, so it helps to move the plastic part of the header up the pins, solder them in and push
-   the plastic bit back down.
-6. The `CHIP_EN` wire, when connected to the right-most pin (3.3V) of the Wi-Fi module, enables it and allows you to use
-   the stock firmware and controller as if no modifications were made. Connected to the left-most pin (ground), it
-   disables the module, freeing up the SPI bus. It is recommended to leave the wire disconnected until the board is
-   installed back in the machine - accidentally breaking the solder joint or lifting the pad is much more likely with a
-   loop rather than with a free-dangling wire. Don't ask me how I know.
+1. Carvera Air itself, obviously.
+2. Raspberry Pi 4B (5 might work too, but I don't have one) with a suitable power supply and a MicroSD card.
+3. Female Dupont 2.54mm / 0.1"-pitch pin header connector(-s) compatible with the Raspberry Pi. A single 40-pin
+   connector is highly recommended.
+4. MicroSD breakout board - a PCB with a MicroSD card shape on one end and solder points/terminals on the other. I used
+   one end of a MicroSD extension cable, they're readily available on the internet. Alternatively, you can design such a
+   PCB and cut it on the Carvera itself (please share your design if you do).
+5. 5-pin female Dupont pin header connector for the SWD port (again, 2.54mm / 0.1" pitch).
+6. 4-pin female JST XH connector for the UART port. You should have one left over from wiring up
+   the [3D probe](https://www.instructables.com/Carvera-Touch-Probe-Modifications/). :)
+7. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heatshrink,
+   etc.)
 
 ### Making the cables
 
 * The Raspberry Pi pins are numbered according to
-  the [official pinout](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#gpio).
-* Keep the wires reasonably short - 10-15 cm is a good length.
+  the [official pinout](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#gpio). The pin numbers
+  refer to the physical connector pins, not the logical GPIO numbers.
+* "Wire color" column is purely informational, feel free to use any colors you want.
+* Keep the wires reasonably short - 10-15 cm is a good length. We're running stuff at pretty low speeds, so no need for
+  shielded cables or anything like that, but meters of wire is not a good idea either.
 * Double and triple check when done.
-* **SPI connection.** Wi-Fi module pins are numbered left-to-right, starting with the pin closest to the USB ports
 
-| Pin              | GND | RST    | SPI CS | SPI MOSI | SPI MISO | SPI CLK | 3V3 |
-|------------------|-----|--------|--------|----------|----------|---------|-----|
-| Wi-Fi module pin | 1   | 2      | 3      | 4        | 5        | 6       | 7   |
-| RPi pin          | NC  | 22     | 24     | 19       | 21       | 23      | NC  |
-| Color I used     | NC  | Purple | Yellow | White    | Orange   | Green   | NC  |
+#### Connector J13 - SPI
 
-* **UART connection.** On the Carvera side, it is the 4-pin JST XH connector just below the MCU, where the unused CAM
-  cable was plugged in. Pins are numbered top-to-bottom, according to the silkscreen. **NOTE: the board RX should be
-  connected to the RPi TX and vice versa!**
+It's the MicroSD port. Required - it's the main communication channel between the machine and LinuxCNC.
 
-| Pin          | GND   | VCC  | RX/TX  | TX/RX   |
-|--------------|-------|------|--------|---------|
-| Carvera pin  | 1     | 2    | 3 (RX) | 4 (TX)  |
-| RPi pin      | 6     | NC   | 8 (TX) | 10 (RX) |
-| Color I used | Black | None | Green  | Green   |
+Pins are numbered according to the [MicroSD pinout](https://en.wikipedia.org/wiki/SD_card#Transfer_modes) in SPI mode.
+Your breakout board might have extra grounds or even a completely different pinout on the cable side, make sure to
+carefully check which pin is which.
 
-* (Optional) **Extra ground.** The above wiring connects the RPi and the Carvera grounds through the UART port. to add
-  extra redundancy, connect one of the Raspberry Pi ground pins (e.g. 25 or 14) to the pin 4 of the connector J10 on the
-  Carvera board, numbered according to the silkscreen (i.e. second from the left/USB ports).
+| J13 Pin# | Signal         | RPi pin# | Wire color    |
+|----------|----------------|----------|---------------|
+| 1        | NC             | NC       | Not connected |
+| 2        | nCS / SPI CS   | 24       | Yellow        |
+| 3        | DI / SPI MOSI  | 20       | White         |
+| 4        | 3V3            | NC       | Not connected |
+| 5        | CLK / SPI SCLK | 23       | Green         |
+| 6        | GND            | 25       | Black         |
+| 7        | DO / SPI MISO  | 21       | Orange        |
+| 8        | NC             | NC       | Not connected |
 
-All connected together, it should look something like this. The extra ground is temporarily disconnected, as I used it
-for the oscilloscope ground. Don't mind the dangling Pi and please excuse the crudity of the model, I didn't have time
-to build it to scale or to paint it.
+#### Connector J12 - SWD/Reset
 
-![Cables connected](images/cables_connected.jpg)
+It's a 5-pin Dupont pin header below and to the right of the MCU, next to J3, used for flashing, resetting and debugging
+the firmware. You can omit it and flash the firmware using an SD card, but it is much more convenient to do it without
+unplugging the cable.
 
-The Carvera side:
+Pins are numbered bottom-to-top, according to the silkscreen.
 
-![Cabling, Carvera side](images/cabling_carvera_side.jpg)
+| J12 Pin# | Signal | RPi pin# | RPi GPIO# | Wire color    |
+|----------|--------|----------|-----------|---------------|
+| 1        | 3V3    | NC       | N/A       | Not connected |
+| 2        | SWDIO  | 22       | 25        | Blue          |
+| 3        | GND    | 20       | N/A       | Black         |
+| 4        | SWDCLK | 18       | 24        | Yellow        |
+| 5        | RESET  | 16       | 23        | Orange        |
 
-The Pi side:
+#### Connector J3 - UART
 
-![Cabling, RPi side](images/cabling_pi_side.jpg)
+It's a 4-pin JST-XH connector right below the MCU, where the unused CAM cable was plugged in, used to see the firmware
+console output, mostly for debugging/informational purposes. You can omit this part if you want.
+
+Pins are numbered top-to-bottom, according to the silkscreen.
+
+**NOTE: the board RX should be connected to the RPi TX and vice versa!**
+
+| J3 Pin# | Signal | RPi pin# | Wire color    |
+|---------|--------|----------|---------------|
+| 1       | GND    | 6        | Black         |
+| 2       | 3V3    | NC       | Not connected |
+| 3       | RX/TX  | 8        | Green         |
+| 4       | TX/RX  | 10       | Green         |
 
 Coming up with a way to permanently mount the Raspberry Pi while providing adequate cooling is left as an exercise to
 the reader.
@@ -122,10 +114,15 @@ the reader.
 Follow the [official Mbed CE instructions](https://mbed-ce.dev/getting-started/toolchain-install/). Use this repo
 instead of the `mbed-ce-hello-world`, `Release` build type and `LPC1768` target.
 
-Instead of flashing the firmware through UART/JTAG/USB, you'll need to put it in the root folder of the SD card as
-usual. The firmware is not using the SD card at all, so you can leave the rest of the files on it. We're also not
-touching the bootloader, so to go back to the stock firmware you just need to download it, rename it to `firmware.bin`
-and put it on the SD card.
+If you're doing this on the Raspberry Pi itself, and it is connected to the machine, you can flash the firmware with
+`sudo ninja flash-firmware`.
+
+Instead of flashing the firmware through SWD - e.g. if you've chosen to not connect that port - you can put it in the
+root folder of the SD card as usual. The firmware is not using the SD card at all, so you can leave the rest of the
+files on it.
+
+We're not touching the bootloader, so to go back to the stock firmware you just need to download it,
+rename it to `firmware.bin` and put it on the SD card.
 
 ### Configuring LinuxCNC
 
