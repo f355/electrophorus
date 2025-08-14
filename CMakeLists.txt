@@ -4,11 +4,12 @@ cmake_policy(VERSION 3.19...3.22)
 # cysecuretools fails to install on macOS and we don't need it anyway,
 # so pretend we already have it
 set(HAVE_PYTHON_CYSECURETOOLS TRUE)
+
 set(MBED_APP_JSON_PATH mbed_app.json5)
 
 include(mbed-os/tools/cmake/mbed_toolchain_setup.cmake)
 
-project(firmware
+project(electrophorus
         # VERSION 1.0.0
         LANGUAGES C CXX ASM)
 
@@ -31,10 +32,9 @@ add_executable(${PROJECT_NAME}
         src/machine_config.cpp
         src/module.cpp
         src/modules/adc/adc.cpp
-        src/modules/e_stop/e_stop.cpp
-        src/modules/gpio/digitalIns.cpp
-        src/modules/gpio/digitalOuts.cpp
-        src/modules/pulse_counter/pulse_counter.cpp
+        src/modules/gpio/digital_ins.cpp
+        src/modules/gpio/digital_outs.cpp
+        src/modules/gpio/pulse_counter.cpp
         src/modules/pwm/pwm.cpp
         src/modules/stepgen/stepgen.cpp
         src/pin.cpp

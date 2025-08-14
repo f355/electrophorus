@@ -38,13 +38,13 @@ typedef struct {
   bool invert;
 } outputPin_t;
 
-#define OUTPUT_PINS 6
-#define OUTPUT_PIN_DESC                                                                                                \
-  {                                                                                                                    \
-    {"work-light", 2, 0, false}, {"probe-power", 0, 11, false}, {"beeper", 1, 14, false}, {"power-12v", 0, 22, false}, \
-        {"power-24v", 0, 10, false}, {                                                                                 \
-      "axis-enable-a", 1, 30, true                                                                                     \
-    }                                                                                                                  \
+#define OUTPUT_PINS 7
+#define OUTPUT_PIN_DESC                                                                                             \
+  {                                                                                                                 \
+    {"e-stop", 0, 20, false}, {"work-light", 2, 0, false}, {"probe-power", 0, 11, false}, {"beeper", 1, 14, false}, \
+        {"power-12v", 0, 22, false}, {"power-24v", 0, 10, false}, {                                                 \
+      "axis-enable-a", 1, 30, true                                                                                  \
+    }                                                                                                               \
   }
 
 #define INPUT_VARS 3

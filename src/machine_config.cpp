@@ -2,10 +2,9 @@
 
 #include "module.h"
 #include "modules/adc/adc.h"
-#include "modules/e_stop/e_stop.h"
-#include "modules/gpio/digitalIns.h"
-#include "modules/gpio/digitalOuts.h"
-#include "modules/pulse_counter/pulse_counter.h"
+#include "modules/gpio/digital_ins.h"
+#include "modules/gpio/digital_outs.h"
+#include "modules/gpio/pulse_counter.h"
 #include "modules/pwm/pwm.h"
 #include "modules/stepgen/stepgen.h"
 
@@ -47,9 +46,6 @@ vector<PruThread*> configure_threads(const SpiComms* comms) {
   const outputPin_t output_pins[OUTPUT_PINS] = OUTPUT_PIN_DESC;
 
   const std::vector<Module*> servo_modules = {
-      // emergency stop
-      new eStop(comms->tx_data, new Pin(0, 20)),  // e-stop button
-
       new DigitalIns(INPUT_PINS, input_pins, comms->tx_data),  //
       new DigitalOuts(OUTPUT_PINS, output_pins, comms->rx_data),
 

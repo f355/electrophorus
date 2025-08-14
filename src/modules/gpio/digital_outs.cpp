@@ -1,5 +1,4 @@
-#include "digitalOuts.h"
-
+#include "digital_outs.h"
 #include "pin.h"
 
 DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], volatile rxData_t* rx_data)
