@@ -1,1 +1,1 @@
-../../machine_config/machine_definitions.h
+../../include/machine_definitions.h
