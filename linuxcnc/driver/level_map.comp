@@ -1,0 +1,94 @@
+component level_map "maps intervals of input values into single output values with hysteresis";
+description """Similar to lincurve, but stepwise (no interpolation) and with hysteresis.
+
+Suitable for e.g. controlling a PWM fan based on temperature.
+
+The behavior is best explained with a graph:
+
+   y
+   ^
+...|
+   |                   hyst.
+y1 |                  +--<--+---------
+   |    hyst.         |     |
+y0 |   +--<--+--------+-->--+
+   |   |     |
+   |   |     |
+   |   |     |
+ 0 +---+-->--+-----------------------> x
+   0         x0             x1    ...
+
+A point of (-Inf, 0) is implied.
+
+Sample usage: loadrt level_map count=2 personality=4,4
+for two mappers with 4 levels each.
+
+The minimum number of levels is 1, the maximum is 16.
+
+X level values must be specified in the increasing order (x-level-[i] < x-level-[i+1]).
+
+""";
+
+author "Konstantin Tcepliaev <f355@f355.org>";
+license "GPL";
+
+option extra_setup yes;
+
+param rw float x-level-##[16 : personality] "Input levels";
+param rw float y-level-##[16 : personality] "Output levels";
+param rw float hysteresis "Don't change the output if the input falls below the threshold by less than this";
+
+pin in float in_ "The input value";
+pin out float out_ "The output value";
+
+variable int last_level = -1;
+
+function _;
+
+;;
+
+FUNCTION(_){
+    double x = in_;
+
+    int target_level = 0;  // Start with (0.0, 0.0) level
+
+    // Find target level based on current temperature
+    for (int i = 0; i < personality; i++) {
+        if (x >= x_level(i)) {
+            target_level = i + 1;  // +1 because level 0 is (0.0, 0.0)
+        } else {
+            break;
+        }
+    }
+
+    // Apply hysteresis if we have a previous level
+    if (last_level != -1 && target_level < last_level) {
+        // Check if temperature has dropped enough below the current level threshold
+        float current_threshold;
+        if (last_level == 0) {
+            current_threshold = 0.0;
+        } else {
+            current_threshold = x_level(last_level - 1);
+        }
+
+        if (x > (current_threshold - hysteresis)) {
+            target_level = last_level;  // Stay at current level due to hysteresis
+        }
+    }
+
+    // Update last level
+    last_level = target_level;
+
+    // Set output based on target level
+    if (target_level == 0) {
+        out_ = 0.0;
+    } else {
+        out_ = y_level(target_level - 1);
+    }
+}
+
+EXTRA_SETUP(){
+	if (personality > 16) personality = 16;
+	if (personality < 1) personality = 1;
+	return 0;
+}

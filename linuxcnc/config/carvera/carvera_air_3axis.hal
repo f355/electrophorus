@@ -1,4 +1,4 @@
-# load the realtime components
+loadusr thermistor names=therm.power,therm.spindle
 
 loadrt [KINS]KINEMATICS
 loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
@@ -8,10 +8,8 @@ loadrt estop_latch names=estop-latch
 loadrt scale names=scale.spindle-gain,scale.spindle-fb
 loadrt lowpass names=lowpass.spindle-fb
 loadrt ddt names=ddt.spindle-fb
+loadrt level_map names=level-map.power,level-map.spindle personality=3,3
 
-#loadusr thermistor count=2 # names=therm.power,therm.spindle
-
-# add the carvera and motion functions to threads
 addf carvera.read servo-thread
 addf motion-command-handler servo-thread
 addf motion-controller servo-thread
@@ -20,6 +18,8 @@ addf scale.spindle-gain servo-thread
 addf scale.spindle-fb servo-thread
 addf lowpass.spindle-fb servo-thread
 addf ddt.spindle-fb servo-thread
+addf level-map.power servo-thread
+addf level-map.spindle servo-thread
 addf carvera.update-freq servo-thread
 addf carvera.write servo-thread
 
@@ -104,17 +104,35 @@ net z-alarm carvera.input.stall-alarm-z => joint.2.amp-fault-in
 
 ######## thermistors and fan control
 # power supply
-#setp thermistor.0.r0 [THERM_POWER]R0
-#setp thermistor.0.r-other [THERM_POWER]R_OTHER
-#setp thermistor.0.beta [THERM_POWER]BETA
-#setp thermistor.0.t0-c [THERM_POWER]T0
-#setp thermistor.0.v-total [THERM_POWER]V_TOTAL
-# net therm-power-in carvera.input-var.power-supply-temperature => thermistor.0.v-thermistor
+setp therm.power.r0 [THERM_POWER]R0
+setp therm.power.r-other [THERM_POWER]R_OTHER
+setp therm.power.beta [THERM_POWER]BETA
+setp therm.power.t0-c [THERM_POWER]T0
+setp therm.power.v-total [THERM_POWER]V_TOTAL
+setp level-map.power.hysteresis 3.0
+setp level-map.power.x-level-00 35.0
+setp level-map.power.y-level-00 300.0
+setp level-map.power.x-level-01 45.0
+setp level-map.power.y-level-01 600.0
+setp level-map.power.x-level-02 60.0
+setp level-map.power.y-level-02 1000.0
+net therm-power-in carvera.input-var.power-supply-temperature => therm.power.v-thermistor
+net therm-power-level therm.power.temperature-c => level-map.power.in
+net therm-power-out level-map.power.out => carvera.output-var.power-supply-fan-duty
 
 # spindle
-#setp thermistor.1.r0 [THERM_SPINDLE]R0
-#setp thermistor.1.r-other [THERM_SPINDLE]R_OTHER
-#setp thermistor.1.beta [THERM_SPINDLE]BETA
-#setp thermistor.1.t0-c [THERM_SPINDLE]T0
-#setp thermistor.1.v-total [THERM_SPINDLE]V_TOTAL
-# net therm-spindle-in carvera.input-var.spindle-temperature => thermistor.1.v-thermistor
+setp therm.spindle.r0 [THERM_SPINDLE]R0
+setp therm.spindle.r-other [THERM_SPINDLE]R_OTHER
+setp therm.spindle.beta [THERM_SPINDLE]BETA
+setp therm.spindle.t0-c [THERM_SPINDLE]T0
+setp therm.spindle.v-total [THERM_SPINDLE]V_TOTAL
+setp level-map.spindle.hysteresis 3.0
+setp level-map.spindle.x-level-00 35.0
+setp level-map.spindle.y-level-00 300.0
+setp level-map.spindle.x-level-01 45.0
+setp level-map.spindle.y-level-01 600.0
+setp level-map.spindle.x-level-02 60.0
+setp level-map.spindle.y-level-02 1000.0
+net therm-spindle-in carvera.input-var.spindle-temperature => therm.spindle.v-thermistor
+net therm-spindle-level therm.spindle.temperature-c => level-map.spindle.in
+net therm-spindle-out level-map.spindle.out => carvera.output-var.spindle-fan-duty
