@@ -1,5 +1,14 @@
 #include "spi_comms.h"
 
+#define SPI_MOSI P0_18
+#define SPI_MISO P0_17
+#define SPI_SCK P0_15
+#define SPI_SSEL P0_16
+
+#define MAX_SPI_DELAY 5  // maximum number of (roughly) milliseconds without communication from LinuxCNC
+
+enum State { ST_IDLE = 0, ST_RUNNING, ST_RESET };
+
 SpiComms::SpiComms()
     : rx_dma1(new MODDMA_Config()),
       rx_dma2(new MODDMA_Config()),
@@ -11,9 +20,7 @@ SpiComms::SpiComms()
       tx_data(new txData_t()) {
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
-}
 
-void SpiComms::init() {
   tx_dma1->channelNum(MODDMA::Channel_0)
       ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
       ->dstMemAddr(0)
@@ -65,9 +72,7 @@ void SpiComms::init() {
       ->dstMemAddr(reinterpret_cast<uint32_t>(rx_data))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2m);
-}
 
-void SpiComms::start() {
   NVIC_SetPriority(DMA_IRQn, 1);
 
   this->tx_data->header = PRU_DATA;
@@ -179,10 +184,67 @@ void SpiComms::rx2_callback() {
 
 void SpiComms::err_callback() { error("DMA error on channel %d!\n", dma.irqProcessingChannel()); }
 
-bool SpiComms::get_status() const { return this->data_ready; }
+void SpiComms::loop() {
+  uint8_t spi_delay = 0;
+  State current_state = ST_IDLE;
+  State prev_state = ST_RESET;
 
-void SpiComms::set_status(const bool status) { this->data_ready = status; }
+  while (true) {
+    Watchdog::get_instance().kick();
 
-bool SpiComms::get_error() const { return this->spi_error; }
+    if (this->spi_error) {
+      printf("SPI communication error, ignoring. If you see a lot of these, check your cabling.\n");
+      this->spi_error = false;
+    }
 
-void SpiComms::set_error(const bool error) { this->spi_error = error; }
+    switch (current_state) {
+      case ST_IDLE:
+        if (current_state != prev_state) {
+          printf("waiting for LinuxCNC...\n");
+        }
+        prev_state = current_state;
+
+        if (this->data_ready) {
+          current_state = ST_RUNNING;
+        }
+        break;
+
+      case ST_RUNNING:
+        if (current_state != prev_state) {
+          printf("running...\n");
+        }
+        prev_state = current_state;
+
+        if (this->data_ready) {
+          spi_delay = 0;
+          this->data_ready = false;
+        } else {
+          spi_delay++;
+        }
+
+        if (spi_delay > MAX_SPI_DELAY) {
+          printf("no communication from LinuxCNC, e-stop active?\n");
+          spi_delay = 0;
+          current_state = ST_RESET;
+        }
+        break;
+      case ST_RESET:
+        if (current_state != prev_state) {
+          printf("resetting receive buffer...\n");
+        }
+        prev_state = current_state;
+
+        // set the whole rxData buffer to 0
+        // rxData.rxBuffer is volatile so need to do this the long way. memset cannot be used for volatile
+        {
+          int n = sizeof(this->rx_data->buffer);
+          while (n-- > 0) {
+            this->rx_data->buffer[n] = 0;
+          }
+        }
+        current_state = ST_IDLE;
+    }
+
+    wait_us(1000);
+  }
+}

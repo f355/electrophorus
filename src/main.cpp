@@ -18,139 +18,40 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-// MBED includes
-#include <cerrno>
-#include <cstdio>
-
+#include "irq_ticker.h"
 #include "machine_config.h"
 #include "mbed.h"
-#include "pru_thread.h"
 #include "spi_comms.h"
 
-#define SPI_ERR_MAX 5
-
-enum State { ST_SETUP = 0, ST_START, ST_IDLE, ST_RUNNING, ST_RESET };
-
 [[noreturn]] int main() {
-  printf("\nProgrammable Realtime Unit booting up...\n");
+  printf("\nelectrophorus booting up...\n");
 
-  uint8_t reset_count = 0;
-  bool threads_running = false;
+  machine_init();
 
-  vector<PruThread*> threads;
+  printf("initializing SPI...");
   const auto comms = new SpiComms();
-  comms->set_status(false);
-  comms->set_error(false);
+  printf("SPI initialized.");
 
-  State current_state = ST_SETUP;
-  State prev_state = ST_RESET;
+  // the terminology here is that of LinuxCNC.
+  // there, the "base" thread is doing hard-realtime stuff like pulsing the steppers,
+  // and the "servo" thread is handling less-urgent tasks (motion planning, pin IO handling, etc.) at a lower frequency.
+  printf("initializing base ticker...\n");
+  const auto base_ticker = &irq_tickers[0];
+  base_ticker->configure(BASE_FREQUENCY, 2);
+  base_ticker->modules = machine_base_modules(comms);
+  base_ticker->start();
 
-  Watchdog& watchdog = Watchdog::get_instance();
-  watchdog.start(2000);
+  printf("initializing servo ticker...\n");
+  const auto servo_ticker = &irq_tickers[1];
+  servo_ticker->configure(SERVO_FREQUENCY, 3);
+  servo_ticker->modules = machine_servo_modules(comms);
+  servo_ticker->start();
+  printf("tickers initialized.\n");
 
-  while (true) {
-    watchdog.kick();
+  // wait for tickers to read IO before moving on
+  wait_us(1000000);
 
-    switch (current_state) {
-      case ST_SETUP: {
-        if (current_state != prev_state) {
-          printf("\n## Entering SETUP state\n");
-        }
-        prev_state = current_state;
+  Watchdog::get_instance().start(2000);
 
-        printf("\nSetting up DMA and threads\n");
-
-        comms->init();
-        comms->start();
-
-        create_timers();
-
-        threads = configure_threads(comms);
-
-        current_state = ST_START;
-        break;
-      }
-      case ST_START:
-        if (current_state != prev_state) {
-          printf("\n## Entering START state\n");
-        }
-        prev_state = current_state;
-
-        if (!threads_running) {
-          for (const auto thread : threads) thread->start();
-
-          threads_running = true;
-
-          // wait for threads to read IO before testing for PRUreset
-          wait_us(1000000);
-        }
-
-        current_state = ST_IDLE;
-
-        break;
-
-      case ST_IDLE:
-        if (current_state != prev_state) {
-          printf("\n## Entering IDLE state\n");
-        }
-        prev_state = current_state;
-
-        if (comms->get_error()) {
-          printf("Communication data error\n");
-          comms->set_error(false);
-        }
-
-        if (comms->get_status()) {
-          current_state = ST_RUNNING;
-        }
-
-        break;
-
-      case ST_RUNNING:
-        if (current_state != prev_state) {
-          printf("\n## Entering RUNNING state\n");
-        }
-        prev_state = current_state;
-
-        if (comms->get_error()) {
-          printf("Communication data error\n");
-          comms->set_error(false);
-        }
-
-        if (comms->get_status()) {
-          reset_count = 0;
-          comms->set_status(false);
-        } else {
-          reset_count++;
-        }
-
-        if (reset_count > SPI_ERR_MAX) {
-          printf("   Communication data error limit reached, resetting\n");
-          reset_count = 0;
-          current_state = ST_RESET;
-        }
-
-        break;
-      case ST_RESET:
-        if (current_state != prev_state) {
-          printf("\n## Entering RESET state\n");
-        }
-        prev_state = current_state;
-
-        // set all of the rxData buffer to 0
-        // rxData.rxBuffer is volatile so need to do this the long way. memset cannot be used for volatile
-        printf("   Resetting rxBuffer\n");
-        {
-          int n = sizeof(comms->rx_data->buffer);
-          while (n-- > 0) {
-            comms->rx_data->buffer[n] = 0;
-          }
-        }
-
-        current_state = ST_IDLE;
-        break;
-    }
-
-    wait_us(1000);
-  }
+  comms->loop();
 }

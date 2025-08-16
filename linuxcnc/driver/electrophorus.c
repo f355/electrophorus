@@ -67,7 +67,7 @@ typedef struct {
   hal_float_t deadband;  // don't try to correct position errors less than this value
 
   // pins
-  hal_bit_t *enabled;     // is the joint enabled?
+  hal_bit_t *enabled;     // is the stepper enabled?
   hal_float_t *pos_cmd;   // in: position command (position units)
   hal_float_t *pos_fb;    // out: position feedback (position units)
   hal_s32_t *count;       // out: position feedback (raw counts)
@@ -79,10 +79,10 @@ typedef struct {
   float freq;           // frequency command sent to PRU
   float old_scale;      // stored scale value
   float prev_cmd;       // previous command to calculate the derivative for PID
-} joint_state_t;
+} stepper_state_t;
 
 typedef struct {
-  joint_state_t *joints[JOINTS];
+  stepper_state_t *steppers[STEPPERS];
 
   hal_bit_t *spi_enable;  // in: are SPI comms enabled?
   hal_bit_t *spi_reset;   // in: should go low when the machine is pulled out of e-stop
@@ -162,39 +162,47 @@ int rtapi_app_main(void) {
   if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->spi_status, comp_id, "%s.spi-status", prefix))) return -1;
 
   int n;
-  // export all the variables for each joint and pin
-  for (n = 0; n < JOINTS; n++) {
-    joint_state_t *joint = hal_malloc(sizeof(joint_state_t));
-    if (joint == 0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc(state->joints[%d]) failed\n", modname, n);
+  // export all the variables for each stepper and pin
+  for (n = 0; n < STEPPERS; n++) {
+    stepper_state_t *stepper = hal_malloc(sizeof(stepper_state_t));
+    if (stepper == 0) {
+      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc(state->steppers[%d]) failed\n", modname, n);
       hal_exit(comp_id);
       return -1;
     }
-    state->joints[n] = joint;
+    state->steppers[n] = stepper;
 
-    if (pin_err(hal_param_float_newf(HAL_RW, &joint->scale, comp_id, "%s.joint.%01d.scale", prefix, n))) return -1;
-    joint->scale = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &joint->maxvel, comp_id, "%s.joint.%01d.maxvel", prefix, n))) return -1;
-    joint->maxvel = 0.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &joint->maxaccel, comp_id, "%s.joint.%01d.maxaccel", prefix, n)))
+    char *stepper_names[STEPPERS] = STEPPER_NAMES;
+    char *name = stepper_names[n];
+
+    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->scale, comp_id, "%s.stepper.%s.scale", prefix, name))) return -1;
+    stepper->scale = 1.0;
+    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->maxvel, comp_id, "%s.stepper.%s.maxvel", prefix, name)))
       return -1;
-    joint->maxaccel = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &joint->pgain, comp_id, "%s.joint.%01d.pgain", prefix, n))) return -1;
-    joint->pgain = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &joint->ff1gain, comp_id, "%s.joint.%01d.ff1gain", prefix, n))) return -1;
-    joint->ff1gain = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &joint->deadband, comp_id, "%s.joint.%01d.deadband", prefix, n)))
+    stepper->maxvel = 0.0;
+    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->maxaccel, comp_id, "%s.stepper.%s.maxaccel", prefix, name)))
+      return -1;
+    stepper->maxaccel = 1.0;
+    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->pgain, comp_id, "%s.stepper.%s.pgain", prefix, name))) return -1;
+    stepper->pgain = 1.0;
+    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->ff1gain, comp_id, "%s.stepper.%s.ff1gain", prefix, name)))
+      return -1;
+    stepper->ff1gain = 1.0;
+    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->deadband, comp_id, "%s.stepper.%s.deadband", prefix, name)))
       return -1;
 
-    if (pin_err(hal_pin_bit_newf(HAL_IN, &joint->enabled, comp_id, "%s.joint.%01d.enable", prefix, n))) return -1;
-    if (pin_err(hal_pin_float_newf(HAL_IN, &joint->pos_cmd, comp_id, "%s.joint.%01d.pos-cmd", prefix, n))) return -1;
-    *joint->pos_cmd = 0.0;
-    if (pin_err(hal_pin_float_newf(HAL_OUT, &joint->freq_cmd, comp_id, "%s.joint.%01d.freq-cmd", prefix, n))) return -1;
-    *joint->freq_cmd = 0.0;
-    if (pin_err(hal_pin_float_newf(HAL_OUT, &joint->pos_fb, comp_id, "%s.joint.%01d.pos-fb", prefix, n))) return -1;
-    *joint->pos_fb = 0.0;
-    if (pin_err(hal_pin_s32_newf(HAL_OUT, &joint->count, comp_id, "%s.joint.%01d.counts", prefix, n))) return -1;
-    *joint->count = 0;
+    if (pin_err(hal_pin_bit_newf(HAL_IN, &stepper->enabled, comp_id, "%s.stepper.%s.enable", prefix, name))) return -1;
+    if (pin_err(hal_pin_float_newf(HAL_IN, &stepper->pos_cmd, comp_id, "%s.stepper.%s.pos-cmd", prefix, name)))
+      return -1;
+    *stepper->pos_cmd = 0.0;
+    if (pin_err(hal_pin_float_newf(HAL_OUT, &stepper->freq_cmd, comp_id, "%s.stepper.%s.freq-cmd", prefix, name)))
+      return -1;
+    *stepper->freq_cmd = 0.0;
+    if (pin_err(hal_pin_float_newf(HAL_OUT, &stepper->pos_fb, comp_id, "%s.stepper.%s.pos-fb", prefix, name)))
+      return -1;
+    *stepper->pos_fb = 0.0;
+    if (pin_err(hal_pin_s32_newf(HAL_OUT, &stepper->count, comp_id, "%s.stepper.%s.counts", prefix, name))) return -1;
+    *stepper->count = 0;
   }
 
   for (n = 0; n < OUTPUT_VARS; n++) {
@@ -289,33 +297,33 @@ void update_freq(void *arg, const long period) {
   }
 
   // loop through generators
-  for (int i = 0; i < JOINTS; i++) {
-    joint_state_t *joint = state->joints[i];
+  for (int i = 0; i < STEPPERS; i++) {
+    stepper_state_t *stepper = state->steppers[i];
     // check for scale change
-    if (joint->scale != joint->old_scale) {
-      joint->old_scale = joint->scale;  // get ready to detect future scale changes
+    if (stepper->scale != stepper->old_scale) {
+      stepper->old_scale = stepper->scale;  // get ready to detect future scale changes
       // scale must not be 0
-      if ((joint->scale < 1e-20) && (joint->scale > -1e-20))  // validate the new scale value
-        joint->scale = 1.0;                                   // value too small, divide by zero is a bad thing
+      if ((stepper->scale < 1e-20) && (stepper->scale > -1e-20))  // validate the new scale value
+        stepper->scale = 1.0;                                     // value too small, divide by zero is a bad thing
     }
 
     // calculate frequency limit
-    double max_freq = BASE_THREAD_FREQUENCY;
+    double max_freq = BASE_FREQUENCY;
 
     // check for user specified frequency limit parameter
-    if (joint->maxvel <= 0.0) {
+    if (stepper->maxvel <= 0.0) {
       // set to zero if negative
-      joint->maxvel = 0.0;
+      stepper->maxvel = 0.0;
     } else {
       // parameter is non-zero, compare to max_freq
-      const double desired_freq = joint->maxvel * fabs(joint->scale);
+      const double desired_freq = stepper->maxvel * fabs(stepper->scale);
 
       if (desired_freq > max_freq) {
         // parameter is too high, limit it
-        joint->maxvel = max_freq / fabs(joint->scale);
+        stepper->maxvel = max_freq / fabs(stepper->scale);
       } else {
         // lower max_freq to match parameter
-        max_freq = joint->maxvel * fabs(joint->scale);
+        max_freq = stepper->maxvel * fabs(stepper->scale);
       }
     }
 
@@ -324,17 +332,17 @@ void update_freq(void *arg, const long period) {
     double max_ac = max_freq * recip_dt;
 
     // check for user specified accel limit parameter
-    if (joint->maxaccel <= 0.0) {
+    if (stepper->maxaccel <= 0.0) {
       // set to zero if negative
-      joint->maxaccel = 0.0;
+      stepper->maxaccel = 0.0;
     } else {
       // parameter is non-zero, compare to max_ac
-      if (joint->maxaccel * fabs(joint->scale) > max_ac) {
+      if (stepper->maxaccel * fabs(stepper->scale) > max_ac) {
         // parameter is too high, lower it
-        joint->maxaccel = max_ac / fabs(joint->scale);
+        stepper->maxaccel = max_ac / fabs(stepper->scale);
       } else {
         // lower limit to match parameter
-        max_ac = joint->maxaccel * fabs(joint->scale);
+        max_ac = stepper->maxaccel * fabs(stepper->scale);
       }
     }
 
@@ -343,27 +351,27 @@ void update_freq(void *arg, const long period) {
 
     double vel_cmd = 0.0;
 
-    const double command = *joint->pos_cmd;
-    const double feedback = *joint->pos_fb;
+    const double command = *stepper->pos_cmd;
+    const double feedback = *stepper->pos_fb;
     const double error = command - feedback;
 
     double deadband;
 
-    if (joint->deadband != 0) {
-      deadband = joint->deadband;
+    if (stepper->deadband != 0) {
+      deadband = stepper->deadband;
     } else {
       // default deadband to slightly more than half a step
-      deadband = 0.6 / joint->scale;
+      deadband = 0.6 / stepper->scale;
     }
 
     // use Proportional control with feed forward (pgain, ff1gain and deadband)
     if (fabs(error) > fabs(deadband)) {
-      const float cmd_d = (command - joint->prev_cmd) * recip_dt;
-      joint->prev_cmd = command;
-      vel_cmd = joint->pgain * error + cmd_d * joint->ff1gain;
+      const float cmd_d = (command - stepper->prev_cmd) * recip_dt;
+      stepper->prev_cmd = command;
+      vel_cmd = stepper->pgain * error + cmd_d * stepper->ff1gain;
     }
 
-    vel_cmd *= joint->scale;
+    vel_cmd *= stepper->scale;
 
     // apply frequency limit
     if (vel_cmd > max_freq) {
@@ -376,22 +384,22 @@ void update_freq(void *arg, const long period) {
     const double dv = max_ac * dt;
     double new_vel;
     // apply accel limit
-    if (vel_cmd > joint->freq + dv) {
-      new_vel = joint->freq + dv;
-    } else if (vel_cmd < joint->freq - dv) {
-      new_vel = joint->freq - dv;
+    if (vel_cmd > stepper->freq + dv) {
+      new_vel = stepper->freq + dv;
+    } else if (vel_cmd < stepper->freq - dv) {
+      new_vel = stepper->freq - dv;
     } else {
       new_vel = vel_cmd;
     }
 
     // test for disabled stepgen
-    if (*joint->enabled == 0) {
+    if (*stepper->enabled == 0) {
       // set velocity to zero
       new_vel = 0;
     }
 
-    joint->freq = new_vel;           // to be sent to the PRU
-    *joint->freq_cmd = joint->freq;  // feedback to LinuxCNC
+    stepper->freq = new_vel;             // to be sent to the PRU
+    *stepper->freq_cmd = stepper->freq;  // feedback to LinuxCNC
   }
 }
 
@@ -414,8 +422,8 @@ void spi_read() {
           // we have received a GOOD payload from the PRU
           *state->spi_status = 1;
 
-          for (i = 0; i < JOINTS; i++) {
-            joint_state_t *joint = state->joints[i];
+          for (i = 0; i < STEPPERS; i++) {
+            stepper_state_t *stepper = state->steppers[i];
 
             // TODO(f355): do we need spike filtering? how could those spikes happen with closed-loop motors?
             // at the moment, it just tries to filter non-zeroes when LinuxCNC is restarted with the PRU running,
@@ -423,23 +431,23 @@ void spi_read() {
             // Feedback spike filter parameters
             const int M = 250;
             const int n = 2;
-            int32_t current_count = rx_data.joint_feedback[i];
-            const int32_t accum_diff = current_count - joint->prev_count;
+            int32_t current_count = rx_data.stepper_feedback[i];
+            const int32_t accum_diff = current_count - stepper->prev_count;
 
             // spike filter
-            if (abs(accum_diff) > M && joint->filter_count < n) {
+            if (abs(accum_diff) > M && stepper->filter_count < n) {
               // recent big change: hold previous value
-              joint->filter_count++;
-              current_count = joint->prev_count;
-              rtapi_print("Spike filter active[%d][%d]: %d\n", i, joint->filter_count, accum_diff);
+              stepper->filter_count++;
+              current_count = stepper->prev_count;
+              rtapi_print("Spike filter active[%d][%d]: %d\n", i, stepper->filter_count, accum_diff);
             } else {
               // normal operation, or else the big change must be real after all
-              joint->prev_count = current_count;
-              joint->filter_count = 0;
+              stepper->prev_count = current_count;
+              stepper->filter_count = 0;
             }
 
-            *joint->count = current_count;
-            *joint->pos_fb = (float)current_count / joint->scale;
+            *stepper->count = current_count;
+            *stepper->pos_fb = (float)current_count / stepper->scale;
           }
 
           for (i = 0; i < INPUT_VARS; i++) {
@@ -476,13 +484,13 @@ void spi_write() {
 
   tx_data.header = PRU_WRITE;
 
-  for (i = 0; i < JOINTS; i++) {
-    joint_state_t *joint = state->joints[i];
-    tx_data.joint_freq_command[i] = joint->freq;
-    if (*joint->enabled == 1) {
-      tx_data.joint_enable |= 1 << i;
+  for (i = 0; i < STEPPERS; i++) {
+    const stepper_state_t *stepper = state->steppers[i];
+    tx_data.stepper_freq_command[i] = stepper->freq;
+    if (*stepper->enabled == 1) {
+      tx_data.stepper_enable |= 1 << i;
     } else {
-      tx_data.joint_enable &= ~(1 << i);
+      tx_data.stepper_enable &= ~(1 << i);
     }
   }
 

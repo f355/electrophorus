@@ -20,9 +20,9 @@ typedef union {
   };
   struct {
     int32_t header;
-    volatile int32_t joint_freq_command[JOINTS];
+    volatile int32_t stepper_freq_command[STEPPERS];
     int32_t output_vars[OUTPUT_VARS];
-    uint8_t joint_enable;
+    uint8_t stepper_enable;
     uint16_t outputs;
   };
 } linuxCncData_t;
@@ -35,7 +35,7 @@ typedef union {
   };
   struct {
     int32_t header;
-    int32_t joint_feedback[JOINTS];
+    int32_t stepper_feedback[STEPPERS];
     int32_t input_vars[INPUT_VARS];
     uint16_t inputs;
   };

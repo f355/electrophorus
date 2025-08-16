@@ -21,8 +21,8 @@ class SpiComms {
   rxData_t temp_rx_buffer1{};
   rxData_t temp_rx_buffer2{};
   uint8_t reject_count = 0;
-  bool data_ready = false;
-  bool spi_error = false;
+  volatile bool data_ready = false;
+  volatile bool spi_error = false;
 
  public:
   SpiComms();
@@ -36,12 +36,7 @@ class SpiComms {
   void rx2_callback();
   void err_callback();
 
-  void init();
-  void start();
-  bool get_status() const;
-  void set_status(bool);
-  bool get_error() const;
-  void set_error(bool);
+  [[noreturn]] void loop();
 };
 
 #endif

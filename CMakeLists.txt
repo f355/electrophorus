@@ -28,7 +28,7 @@ add_subdirectory(lib/MODDMA)
 
 add_executable(${PROJECT_NAME}
         src/main.cpp
-        src/lpc_timer.cpp
+        src/irq_ticker.cpp
         src/machine_config.cpp
         src/module.cpp
         src/modules/adc/adc.cpp
@@ -38,7 +38,6 @@ add_executable(${PROJECT_NAME}
         src/modules/pwm/pwm.cpp
         src/modules/stepgen/stepgen.cpp
         src/pin.cpp
-        src/pru_thread.cpp
         src/spi_comms.cpp
 )
 

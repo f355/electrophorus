@@ -6,11 +6,11 @@
 #include "spi_comms.h"
 
 class Stepgen final : public Module {
-  int joint_enable_mask;
+  int stepper_enable_mask;
 
   volatile int32_t *commanded_frequency;  // pointer to the data source where to get the frequency command
   volatile int32_t *feedback;             // pointer where to put the feedback
-  volatile uint8_t *joint_enable;
+  volatile uint8_t *stepper_enable;
 
   bool current_dir = true;   // direction on last iteration, used for dir setup
   bool is_stepping = false;  // true if the step pin is held high
@@ -21,7 +21,7 @@ class Stepgen final : public Module {
   uint32_t frequency_scale;
 
  public:
-  Stepgen(int joint_number, Pin *step_pin, Pin *dir_pin, uint32_t thread_frequency, volatile rxData_t *rx_data,
+  Stepgen(int stepper_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, volatile rxData_t *rx_data,
           volatile txData_t *tx_data);
 
   virtual ~Stepgen() = default;
