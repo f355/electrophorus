@@ -50,12 +50,11 @@ function _;
 FUNCTION(_){
     double x = in_;
 
-    int target_level = 0;  // Start with (0.0, 0.0) level
+    int target_level = 0;
 
-    // Find target level based on current temperature
     for (int i = 0; i < personality; i++) {
         if (x >= x_level(i)) {
-            target_level = i + 1;  // +1 because level 0 is (0.0, 0.0)
+            target_level = i + 1;  // +1 because level 0 is (-Inf, 0.0)
         } else {
             break;
         }
@@ -63,7 +62,7 @@ FUNCTION(_){
 
     // Apply hysteresis if we have a previous level
     if (last_level != -1 && target_level < last_level) {
-        // Check if temperature has dropped enough below the current level threshold
+        // Check if X has dropped enough below the current level threshold
         float current_threshold;
         if (last_level == 0) {
             current_threshold = 0.0;
@@ -76,10 +75,8 @@ FUNCTION(_){
         }
     }
 
-    // Update last level
     last_level = target_level;
 
-    // Set output based on target level
     if (target_level == 0) {
         out_ = 0.0;
     } else {
