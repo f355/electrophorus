@@ -20,7 +20,7 @@ vector<PruThread*> configure_threads(const SpiComms* comms) {
   printf("\ncreating threads for CA1\n");
 
   // Args: timer number, frequency, IRQ priority
-  auto base_thread = new PruThread(1, BASE_THREAD_FREQUENCY, 2);
+  auto base_thread = new PruThread(0, BASE_THREAD_FREQUENCY, 2);
   printf("created base thread\n");
 
   const std::vector<Module*> base_modules = {
@@ -39,7 +39,7 @@ vector<PruThread*> configure_threads(const SpiComms* comms) {
   for (const auto m : base_modules) base_thread->register_module(m);
   printf("registered base modules\n");
 
-  auto servo_thread = new PruThread(2, SERVO_THREAD_FREQUENCY, 3);
+  auto servo_thread = new PruThread(1, SERVO_THREAD_FREQUENCY, 3);
   printf("created servo thread\n");
 
   const inputPin_t input_pins[INPUT_PINS] = INPUT_PIN_DESC;
