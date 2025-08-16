@@ -39,8 +39,8 @@ You'll need the following:
 4. MicroSD breakout board - a PCB with a MicroSD card shape on one end and solder points/terminals on the other. I used
    one end of a MicroSD extension cable, they're readily available on the internet. Alternatively, you can design such a
    PCB and cut it on the Carvera itself (please share your design if you do).
-5. 5-pin female Dupont pin header connector for the SWD port (again, 2.54mm / 0.1" pitch).
-6. 4-pin female JST XH connector for the UART port. You should have one left over from wiring up
+5. (Recommended) 5-pin female Dupont pin header connector for the SWD port (again, 2.54mm / 0.1" pitch).
+6. (Optional) 4-pin female JST XH connector for the UART port. You should have one left over from wiring up
    the [3D probe](https://www.instructables.com/Carvera-Touch-Probe-Modifications/). :)
 7. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heatshrink,
    etc.)
@@ -50,7 +50,8 @@ You'll need the following:
 * The Raspberry Pi pins are numbered according to
   the [official pinout](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#gpio). The pin numbers
   refer to the physical connector pins, not the logical GPIO numbers.
-* "Wire color" column is purely informational, feel free to use any colors you want.
+* "Wire color" column is purely informational and refers to the colors on the photos below, feel free to use any colors
+  you want.
 * Keep the wires reasonably short - 10-15 cm is a good length. We're running stuff at pretty low speeds, so no need for
   shielded cables or anything like that, but meters of wire is not a good idea either.
 * Double and triple check when done.
@@ -61,7 +62,8 @@ It's the MicroSD port. Required - it's the main communication channel between th
 
 Pins are numbered according to the [MicroSD pinout](https://en.wikipedia.org/wiki/SD_card#Transfer_modes) in SPI mode.
 Your breakout board might have extra grounds or even a completely different pinout on the cable side, make sure to
-carefully check which pin is which.
+carefully check which pin is which. On the photos below, the black ground wire is in the "wrong" place because my board
+had extra grounds, and it was more convenient to connect it there.
 
 | J13 Pin# | Signal         | RPi pin# | Wire color    |
 |----------|----------------|----------|---------------|
@@ -103,11 +105,21 @@ Pins are numbered top-to-bottom, according to the silkscreen.
 |---------|--------|----------|---------------|
 | 1       | GND    | 6        | Black         |
 | 2       | 3V3    | NC       | Not connected |
-| 3       | RX/TX  | 8        | Green         |
-| 4       | TX/RX  | 10       | Green         |
+| 3       | RX/TX  | 10       | Green         |
+| 4       | TX/RX  | 8        | Green         |
 
-Coming up with a way to permanently mount the Raspberry Pi while providing adequate cooling is left as an exercise to
-the reader.
+#### Result
+
+The resulting cable should look something like this:
+
+![cable](img/cable.jpeg)
+
+All connected together:
+
+![connected](img/connected.jpeg)
+
+Please excuse the crudity of the model, I didn't have time to build it to scale or to paint it. Coming up with a way to
+permanently mount the Raspberry Pi while providing adequate cooling is left as an exercise to the reader.
 
 ### Building the firmware
 
@@ -115,14 +127,15 @@ Follow the [official Mbed CE instructions](https://mbed-ce.dev/getting-started/t
 instead of the `mbed-ce-hello-world`, `Release` build type and `LPC1768` target.
 
 If you're doing this on the Raspberry Pi itself, and it is connected to the machine, you can flash the firmware with
-`sudo ninja flash-firmware`.
+`sudo ninja flash-electrophorus`.
 
-Instead of flashing the firmware through SWD - e.g. if you've chosen to not connect that port - you can put it in the
-root folder of the SD card as usual. The firmware is not using the SD card at all, so you can leave the rest of the
-files on it.
+Instead of flashing the firmware through SWD - e.g. if you've chosen to not connect that port - you can rename
+`build/electrophorus.bin` to `firmware.bin` and put it in the root folder of the SD card as usual. The firmware is
+(obviously) not using the SD card at all, so you can leave the rest of the files on it.
 
-We're not touching the bootloader, so to go back to the stock firmware you just need to download it,
-rename it to `firmware.bin` and put it on the SD card.
+We're not touching the bootloader, so to go back to the [stock](https://github.com/MakeraInc/CarveraFirmware/releases)
+or [community](https://github.com/Carvera-Community/Carvera_Community_Firmware/releases) firmware you just need to
+download it, rename it to `firmware.bin` and put it on the SD card.
 
 ### Configuring LinuxCNC
 
