@@ -28,9 +28,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
   machine_init();
 
-  printf("initializing SPI...");
+  printf("initializing SPI...\n");
   const auto comms = new SpiComms();
-  printf("SPI initialized.");
+  printf("SPI initialized.\n");
 
   // the terminology here is that of LinuxCNC.
   // there, the "base" thread is doing hard-realtime stuff like pulsing the steppers,
