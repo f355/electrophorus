@@ -3,6 +3,7 @@
 #include "irq_ticker.h"
 #include "module.h"
 #include "modules/adc/adc.h"
+#include "modules/e_stop/e_stop.h"
 #include "modules/gpio/digital_ins.h"
 #include "modules/gpio/digital_outs.h"
 #include "modules/gpio/pulse_counter.h"
@@ -27,11 +28,14 @@ vector<Module*> machine_base_modules(const SpiComms* comms) {
           new Stepgen(3, new Pin(1, 21), (new Pin(1, 23))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data)};
 }
 
-vector<Module*> machine_servo_modules(const SpiComms* comms) {
+vector<Module*> machine_servo_modules(SpiComms* comms) {
   const inputPin_t input_pins[INPUT_PINS] = INPUT_PIN_DESC;
   const outputPin_t output_pins[OUTPUT_PINS] = OUTPUT_PIN_DESC;
 
   return {
+      // e-stop
+      new EStop(new Pin(0, 20), comms),
+
       new DigitalIns(INPUT_PINS, input_pins, comms->tx_data),  //
       new DigitalOuts(OUTPUT_PINS, output_pins, comms->rx_data),
 
@@ -41,7 +45,7 @@ vector<Module*> machine_servo_modules(const SpiComms* comms) {
       // on LPC1768, the period is shared among all PWMs,
       // so don't try setting it to different values - the last one wins.
       // many bothans died to bring us this information.
-      new PWM(0, new Pin(2, 5), 10000, comms->rx_data),  // spindle
+      new PWM(0, new Pin(2, 5), 10000, comms->rx_data),  // spindle - keep this at output_var=0 for e-stop to kill it
       new PWM(1, new Pin(2, 1), 10000, comms->rx_data),  // spindle fan
       new PWM(2, new Pin(2, 3), 10000, comms->rx_data),  // power supply fan
       new PWM(3, new Pin(2, 2), 10000, comms->rx_data),  // EXT port output

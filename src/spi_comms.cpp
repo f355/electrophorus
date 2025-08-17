@@ -87,87 +87,49 @@ SpiComms::SpiComms()
 }
 
 void SpiComms::tx1_callback() {
-  // SPI Tx
   dma.Disable(dma.irqProcessingChannel());
-
-  // Clear DMA IRQ flags.
-  if (dma.irqType() == MODDMA::TcIrq) dma.clearTcIrq();
-  if (dma.irqType() == MODDMA::ErrIrq) dma.clearErrIrq();
-
+  dma.clearTcIrq();
   dma.Prepare(tx_dma2);
 }
 
 void SpiComms::tx2_callback() {
-  // SPI Tx
   dma.Disable(dma.irqProcessingChannel());
-
-  // Clear DMA IRQ flags.
-  if (dma.irqType() == MODDMA::TcIrq) dma.clearTcIrq();
-  if (dma.irqType() == MODDMA::ErrIrq) dma.clearErrIrq();
-
+  dma.clearTcIrq();
   dma.Prepare(tx_dma1);
 }
 
 void SpiComms::rx1_callback() {
-  // SPI Rx
-  dma.Disable(dma.irqProcessingChannel());
-
-  data_ready = false;
-  spi_error = false;
-
-  // Clear DMA IRQ flags.
-  if (dma.irqType() == MODDMA::TcIrq) dma.clearTcIrq();
-  if (dma.irqType() == MODDMA::ErrIrq) dma.clearErrIrq();
-
-  // Check and move the received SPI data payload
-  switch (temp_rx_buffer1.header) {
-    case PRU_READ:
-      data_ready = true;
-      reject_count = 0;
-      dma.Disable(rx_memcpy_dma2->channelNum());
-      break;
-
-    case PRU_WRITE:
-      data_ready = true;
-      reject_count = 0;
-      dma.Prepare(rx_memcpy_dma1);
-      break;
-
-    default:
-      reject_count++;
-      if (reject_count > 5) {
-        spi_error = true;
-      }
-      dma.Disable(rx_memcpy_dma2->channelNum());
-  }
-
-  // swap Rx buffers
-  dma.Prepare(rx_dma2);
+  this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2, this->rx_memcpy_dma1,
+                         this->rx_memcpy_dma2->channelNum());
 }
 
 void SpiComms::rx2_callback() {
-  // SPI Rx
+  this->rx_callback_impl(this->temp_rx_buffer2, this->rx_dma1, this->rx_memcpy_dma2,
+                         this->rx_memcpy_dma1->channelNum());
+}
+
+// ReSharper disable once CppDFAUnreachableFunctionCall
+void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx, MODDMA_Config* memcpy,
+                                const uint32_t other_memcpy) {
   dma.Disable(dma.irqProcessingChannel());
+  dma.clearTcIrq();
 
   data_ready = false;
   spi_error = false;
 
-  // Clear DMA IRQ flags.
-  if (dma.irqType() == MODDMA::TcIrq) dma.clearTcIrq();
-  if (dma.irqType() == MODDMA::ErrIrq) dma.clearErrIrq();
-
-  // Check and move the recieved SPI data payload
-  switch (temp_rx_buffer2.header) {
+  // Check and move the received SPI data payload
+  switch (rx_buffer.header) {
     case PRU_READ:
       data_ready = true;
       reject_count = 0;
-      dma.Disable(rx_memcpy_dma1->channelNum());
+      dma.Disable(other_memcpy);
       break;
 
     case PRU_WRITE:
       data_ready = true;
       reject_count = 0;
-      dma.Prepare(rx_memcpy_dma2);
+      // don't copy the rx_data if e-stop button is pressed
+      if (!this->e_stop_active) dma.Prepare(memcpy);
       break;
 
     default:
@@ -175,11 +137,11 @@ void SpiComms::rx2_callback() {
       if (reject_count > 5) {
         spi_error = true;
       }
-      dma.Disable(rx_memcpy_dma1->channelNum());
+      dma.Disable(other_memcpy);
   }
 
   // swap Rx buffers
-  dma.Prepare(rx_dma1);
+  dma.Prepare(other_rx);
 }
 
 void SpiComms::err_callback() { error("DMA error on channel %d!\n", dma.irqProcessingChannel()); }
@@ -188,9 +150,19 @@ void SpiComms::loop() {
   uint8_t spi_delay = 0;
   State current_state = ST_IDLE;
   State prev_state = ST_RESET;
+  bool prev_e_stop_active = this->e_stop_active;
 
   while (true) {
     Watchdog::get_instance().kick();
+
+    if (this->e_stop_active != prev_e_stop_active) {
+      if (this->e_stop_active) {
+        printf("e-stop pressed, machine halted!\n");
+      } else {
+        printf("e-stop released, resuming operation...\n");
+      }
+      prev_e_stop_active = this->e_stop_active;
+    }
 
     if (this->spi_error) {
       printf("SPI communication error, ignoring. If you see a lot of these, check your cabling.\n");

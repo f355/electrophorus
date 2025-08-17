@@ -30,7 +30,7 @@ void Stepgen::run() {
   // works by incrementing an accumulator on every tick with a value calculated such that the accumulator
   // goes over a certain bit at the commanded frequency.
   //
-  // frequency_scale is set to the increment that needs to be added to the accumulator on each thread tick
+  // frequency_scale is set to the increment that needs to be added to the accumulator on each tick
   // for the accumulator to reach that bit in one second at the tick frequency.
   //
   // by multiplying frequency_scale with the commanded frequency, we get the increment

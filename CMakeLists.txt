@@ -32,6 +32,7 @@ add_executable(${PROJECT_NAME}
         src/machine_config.cpp
         src/module.cpp
         src/modules/adc/adc.cpp
+        src/modules/e_stop/e_stop.cpp
         src/modules/gpio/digital_ins.cpp
         src/modules/gpio/digital_outs.cpp
         src/modules/gpio/pulse_counter.cpp

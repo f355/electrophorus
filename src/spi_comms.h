@@ -24,17 +24,22 @@ class SpiComms {
   volatile bool data_ready = false;
   volatile bool spi_error = false;
 
+  void tx1_callback();
+  void tx2_callback();
+  void rx1_callback();
+  void rx2_callback();
+  void err_callback();
+
+  void rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx, MODDMA_Config* memcpy,
+                        uint32_t other_memcpy);
+
  public:
   SpiComms();
 
   rxData_t volatile* rx_data;
   txData_t volatile* tx_data;
 
-  void tx1_callback();
-  void tx2_callback();
-  void rx1_callback();
-  void rx2_callback();
-  void err_callback();
+  volatile bool e_stop_active = false;
 
   [[noreturn]] void loop();
 };
