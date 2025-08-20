@@ -69,7 +69,7 @@ had extra grounds, and it was more convenient to connect it there.
 |----------|----------------|----------|---------------|
 | 1        | NC             | NC       | Not connected |
 | 2        | nCS / SPI CS   | 24       | Yellow        |
-| 3        | DI / SPI MOSI  | 20       | White         |
+| 3        | DI / SPI MOSI  | 19       | White         |
 | 4        | 3V3            | NC       | Not connected |
 | 5        | CLK / SPI SCLK | 23       | Green         |
 | 6        | GND            | 25       | Black         |
