@@ -9,6 +9,7 @@ loadrt scale names=scale.spindle-gain,scale.spindle-fb
 loadrt lowpass names=lowpass.spindle-fb
 loadrt ddt names=ddt.spindle-fb
 loadrt level_map names=level-map.power,level-map.spindle personality=3,3
+loadrt or2 names=or2.probe
 
 addf carvera.read servo-thread
 addf motion-command-handler servo-thread
@@ -20,6 +21,7 @@ addf lowpass.spindle-fb servo-thread
 addf ddt.spindle-fb servo-thread
 addf level-map.power servo-thread
 addf level-map.spindle servo-thread
+addf or2.probe servo-thread
 addf carvera.update-freq servo-thread
 addf carvera.write servo-thread
 
@@ -136,3 +138,8 @@ setp level-map.spindle.y-level-02 1000.0
 net therm-spindle-in carvera.input-var.spindle-temperature => therm.spindle.v-thermistor
 net therm-spindle-level therm.spindle.temperature-c => level-map.spindle.in
 net therm-spindle-out level-map.spindle.out => carvera.output-var.spindle-fan-duty
+
+######## probe/tool setter
+net tool-setter-or carvera.input.tool-setter => or2.probe.in0
+net probe-or carvera.input.probe => or2.probe.in1
+net probe-in or2.probe.out => motion.probe-input

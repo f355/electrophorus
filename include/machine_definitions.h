@@ -27,7 +27,7 @@
    {"endstop-z", 1, 1, false, false}, \
    {"endstop-a", 1, 9, false, false}, \
    {"probe", 2, 6, true, false}, \
-   {"tool-length-sensor", 0, 5, false, false}}
+   {"tool-setter", 0, 5, false, false}}
 // clang-format on
 
 #define OUTPUT_PINS 6
