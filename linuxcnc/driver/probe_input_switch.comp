@@ -1,0 +1,57 @@
+component probe_input_switch "switches probe input based on the selected tool";
+description """This component is intended to be used on machines
+equipped with both the tool setter on the bed and the spindle touch probe.
+
+Under normal operation, the tool setter input should be used for motion.probe-input,
+in order to measure the tool length on Tx M6 commands.
+If we need to use the touch probe, its input should be used instead.
+
+Combining the inputs with a simple boolean OR would generally work.
+
+However, the touch probe usually has a certain amount of deflection (typically 0.01-0.03 mm) before it triggers,
+so when we measure the probe length against the tool setter, and the probe spring is stronger
+than that of the tool setter, the tool setter would trigger first and this deflection would not be accounted for.
+
+This component solves that by selecting either of the inputs based on the current tool number.
+
+1. If the active tool number (probe_input_switch.tool-number) is equal to the probe tool number
+   in the library (probe_input_switch.probe-number), the probe signal (probe_input_switch.probe-in)
+   is copied to the output (probe_input_switch.out).
+2. Otherwise, the tool setter input (probe_input_switch.tool-setter-in) is copied to the output.
+
+CAUTION: if you accidentally put a wrong tool in the spindle instead of the touch probe,
+or the touch probe is not working properly for some reason, you WILL crash the machine!
+Always check that the touch probe is powered and working, LinuxCNC GUIs typically have an LED in the interface
+that lights up when the probe is triggered.
+
+""";
+
+examples """
+loadrt probe_input_switch
+addf probe_input_switch servo-thread
+
+setp probe_input_switch.probe-number 99
+net probe-input <your touch probe pin> => probe_input_switch.probe-in
+net tool-setter-input <your tool setter pin> => probe_input_switch.tool-setter-in
+net probe-tool-number iocontrol.0.tool-number => probe_input_switch.tool-number
+net probe-out probe_input_switch.out => motion.probe-input
+
+""";
+
+author "Konstantin Tcepliaev <f355@f355.org>";
+license "GPL";
+
+option singleton yes;
+
+param rw s32 probe-number "Touch probe tool number in the tool library";
+
+pin in s32 tool-number "Current/active tool number";
+pin in bit probe-in "Touch probe input";
+pin in bit tool-setter-in "Tool setter input";
+pin out bit out_ "The output value";
+
+function _ nofp;
+
+;;
+
+FUNCTION(_){ out_ = tool_number == probe_number ? probe_in : tool_setter_in; }
