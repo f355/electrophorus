@@ -1,0 +1,7 @@
+loadrt or2 names=or2.probe
+
+addf or2.probe servo-thread
+
+net tool-setter-or carvera.input.tool-setter => or2.probe.in0
+net probe-or carvera.input.probe => or2.probe.in1
+net probe-in or2.probe.out => motion.probe-input
