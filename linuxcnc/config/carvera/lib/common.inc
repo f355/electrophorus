@@ -108,9 +108,6 @@ BASE_PERIOD = 0
 TASK = milltask
 CYCLE_TIME = 0.010
 
-[HAL]
-HALUI = halui
-
 [HALUI]
 # no content
 
