@@ -1,6 +1,5 @@
-# Support for XHC-WHB04B-04 pendant
-# Taken verbatim from here:
-# https://forum.linuxcnc.org/10-advanced-configuration/51432-xhc-whb04b-04-got-it-working
+# Taken from LinuxCNC docs
+#
 
 # ######################################################################
 # load pendant components
@@ -13,7 +12,7 @@ loadusr -W xhc-whb04b-6 -HsfB
 # ######################################################################
 
 # On/Off signals
-net machine-is-on                                          whb.halui.machine.is-on
+net machine.is-on                         halui.machine.is-on                   whb.halui.machine.is-on
 net pdnt.machine.on                       whb.halui.machine.on                  halui.machine.on
 net pdnt.machine.off                      whb.halui.machine.off                 halui.machine.off
 
@@ -34,19 +33,19 @@ net pdnt.mode.joint                       whb.halui.mode.joint                  
 net pdnt.mode.teleop                      whb.halui.mode.teleop                 halui.mode.teleop
 net pdnt.mode.is-auto                     halui.mode.is-auto                    whb.halui.mode.is-auto
 net pdnt.mode.is-manual                   halui.mode.is-manual                  whb.halui.mode.is-manual
-net pdnt.mode.is-mdi                                         whb.halui.mode.is-mdi
+net pdnt.mode.is-mdi                      halui.mode.is-mdi                     whb.halui.mode.is-mdi
 net pdnt.mode.is-joint                    halui.mode.is-joint                   whb.halui.mode.is-joint
 net pdnt.mode.is-teleop                   halui.mode.is-teleop                  whb.halui.mode.is-teleop
 
 # "is-homed" axis signal for allowing pendant when machine is not homed
-net pdnt.axis.X.is-homed                                whb.halui.joint.x.is-homed
-net pdnt.axis.Y.is-homed                                 whb.halui.joint.y.is-homed
-net pdnt.axis.Z.is-homed                                whb.halui.joint.z.is-homed
+net pdnt.axis.X.is-homed                  halui.joint.0.is-homed                whb.halui.joint.x.is-homed
+net pdnt.axis.Y.is-homed                  halui.joint.1.is-homed                whb.halui.joint.y.is-homed
+net pdnt.axis.Z.is-homed                  halui.joint.2.is-homed                whb.halui.joint.z.is-homed
 
 # "selected axis" signals
-net pdnt.axis.X.select                    whb.halui.axis.x.select
-net pdnt.axis.y.select                    whb.halui.axis.y.select
-net pdnt.axis.Z.select                    whb.halui.axis.z.select
+net pdnt.axis.X.select                    whb.halui.axis.x.select               halui.axis.x.select
+net pdnt.axis.y.select                    whb.halui.axis.y.select               halui.axis.y.select
+net pdnt.axis.Z.select                    whb.halui.axis.z.select               halui.axis.z.select
 
 net pdnt.axis.x.jog-scale                 whb.axis.x.jog-scale                  axis.x.jog-scale
 net pdnt.axis.y.jog-scale                 whb.axis.y.jog-scale                  axis.y.jog-scale
@@ -75,7 +74,7 @@ net pdnt.macro-6                          whb.button.macro-6                    
 net pdnt.macro-7                          whb.button.macro-7                    halui.mdi-command-07             # use MDI command from main.ini
 net pdnt.reserved.for.spindle.dir         whb.button.macro-8                                                     # Hardcoded for spindle direction inside pendant
 net pdnt.macro-9                          whb.button.macro-9                    halui.mdi-command-09             # use MDI command from main.ini
-net pdnt.reserved.for.ABS-REL             whb.button.macro-10                                                    # Hardcoded for swap Dro  Relative/Absolue
+net pdnt.reserved.for.ABS-REL             whb.button.macro-10                                                    # Hardcoded for swap Dro  Relative/Absolute
 net pdnt.macro-14                         whb.button.macro-14                   halui.mdi-command-14             # use MDI command from main.ini
 net pdnt.reserved.for.flood               whb.button.macro-15                                                    # Hardcoded for halui.flood on/off
 net pdnt.reserved.for.mist                whb.button.macro-16                                                    # Hardcoded for halui.mist on/off
@@ -93,10 +92,6 @@ net  pdnt.flood.on                        whb.halui.flood.on                    
 net  pdnt.mist.is-on                      whb.halui.mist.is-on                  halui.mist.is-on                 #return signal is on or off
 net  pdnt.mist.off                        whb.halui.mist.off                    halui.mist.off                   #reserved whb.button.macro-16
 net  pdnt.mist.on                         whb.halui.mist.on                     halui.mist.on                    #reserved whb.button.macro-16
-
-#net  pdnt.lube.is-on                      whb.halui.lube.is-on                  halui.lube.is-on                 #return signal is on or off
-#net  pdnt.lube.off                        whb.halui.lube.off                    halui.lube.off                   #reserved whb.button.macro-2
-#net  pdnt.lube.on                         whb.halui.lube.on                     halui.lube.on                    #reserved whb.button.macro-2
 
 
 # default function button signals
@@ -126,14 +121,14 @@ net pdnt.button.probe-z                   whb.button.probe-z                    
 
 
 # spindle related signals
-net pdnt.spindle.is-on                    whb.halui.spindle.is-on
+net pdnt.spindle.is-on                    whb.halui.spindle.is-on               spindle.0.on
 net pdnt.spindle.start                    whb.halui.spindle.start               halui.spindle.0.start
-net pdnt.spindle.stop                     whb.halui.spindle.stop
-net pdnt.spindle.forward                  whb.halui.spindle.forward
-net pdnt.spindle.reverse                  whb.halui.spindle.reverse
+net pdnt.spindle.stop                     whb.halui.spindle.stop                halui.spindle.0.stop
+net pdnt.spindle.forward                  whb.halui.spindle.forward             halui.spindle.0.forward
+net pdnt.spindle.reverse                  whb.halui.spindle.reverse             halui.spindle.0.reverse
 net pdnt.spindle.increase                 whb.halui.spindle.increase            halui.spindle.0.increase         # reserved whb.button.macro-3
 net pdnt.spindle.decrease                 whb.halui.spindle.decrease            halui.spindle.0.decrease         # reserved whb.button.macro-4
-net pdnt.spindle-speed-abs                whb.halui.spindle-speed-cmd           spindle.0.speed-out-abs          # speed cmd from motion in rpm absolue
+net pdnt.spindle-speed-abs                whb.halui.spindle-speed-cmd           spindle.0.speed-out-abs          # speed cmd from motion in rpm absolute
 
 
 # spindle speed override signals
