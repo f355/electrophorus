@@ -9,18 +9,18 @@ addf ddt.spindle-fb servo-thread
 
 # output - 0.0583 scale factor gives the right duty cycle at 13k RPM
 setp scale.spindle-gain.gain 0.0583
-net spindle-speed-scale spindle.0.speed-out => scale.spindle-gain.in
-net spindle-speed-pwm scale.spindle-gain.out => carvera.output-var.spindle-duty
+net spindle.speed.scale spindle.0.speed-out => scale.spindle-gain.in
+net spindle.speed.pwm scale.spindle-gain.out => carvera.output-var.spindle-duty
 
 # feedback
 # two pulses/rev
 setp scale.spindle-fb.gain 0.5
 # smoothen the signal so derivative can work better
 setp lowpass.spindle-fb.gain 0.005
-net spindle-feedback-scale carvera.input-var.spindle-feedback => scale.spindle-fb.in
-net spindle-feedback-lowpass scale.spindle-fb.out => lowpass.spindle-fb.in => spindle.0.revs
-net spindle-feedback-ddt lowpass.spindle-fb.out => ddt.spindle-fb.in
-net spindle-feedback-vel ddt.spindle-fb.out => spindle.0.speed-in
+net spindle.feedback.scale carvera.input-var.spindle-feedback => scale.spindle-fb.in
+net spindle.feedback.lowpass scale.spindle-fb.out => lowpass.spindle-fb.in => spindle.0.revs
+net spindle.feedback.ddt lowpass.spindle-fb.out => ddt.spindle-fb.in
+net spindle.feedback.vel ddt.spindle-fb.out => spindle.0.speed-in
 
 # alarm
-net spindle-alarm carvera.input.stall-alarm-spindle => spindle.0.amp-fault-in
+net spindle.alarm carvera.input.stall-alarm-spindle => spindle.0.amp-fault-in

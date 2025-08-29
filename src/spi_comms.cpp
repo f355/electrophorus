@@ -18,6 +18,11 @@ SpiComms::SpiComms()
       rx_memcpy_dma2(new MODDMA_Config()),
       rx_data(new rxData_t()),
       tx_data(new txData_t()) {
+  // sanity-check the struct sizes
+  if constexpr (sizeof(rxData_t) != sizeof(txData_t)) {
+    // ReSharper disable once CppDFAUnreachableCode
+    error("rx and tx buffer size mismatch!");
+  }
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 

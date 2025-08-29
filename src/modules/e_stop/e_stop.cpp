@@ -10,7 +10,7 @@ EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms) {
 void EStop::rise_handler() const {
   this->comms->e_stop_active = true;
   // kill the steppers
-  this->comms->rx_data->stepper_enable = 0;
+  this->comms->rx_data->stepgen_enable_mask = 0;
   // kill the spindle (assumes the spindle speed is the first output_var)
   this->comms->rx_data->output_vars[0] = 0;
 }

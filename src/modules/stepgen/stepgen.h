@@ -8,17 +8,16 @@
 class Stepgen final : public Module {
   int stepper_enable_mask;
 
-  volatile int32_t *commanded_frequency;  // pointer to the data source where to get the frequency command
-  volatile int32_t *feedback;             // pointer where to put the feedback
+  volatile fixp_t *commanded_frequency;  // frequency command, 32.32 fixed-point
+  volatile fixp_t *step_position;        // 32.32 fixed-point number of steps taken,
+                                         // serves as both DDS accumulator and position feedback
   volatile uint8_t *stepper_enable;
 
+  int64_t ticker_frequency;
   bool current_dir = true;   // direction on last iteration, used for dir setup
   bool is_stepping = false;  // true if the step pin is held high
-  int32_t last_commanded_frequency = 0;
-  int32_t step_count = 0;
-  int32_t increment = 0;
-  int32_t accumulator = 0;  // Direct Digital Synthesis (DDS) accumulator
-  uint32_t frequency_scale;
+  fixp_t last_commanded_frequency = 0;
+  int64_t increment = 0;
 
  public:
   Stepgen(int stepper_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, volatile rxData_t *rx_data,

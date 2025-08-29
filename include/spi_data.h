@@ -8,34 +8,34 @@
 #define PRU_WRITE 0x77726974  // "writ" SPI payload
 
 // SPI configuration
-#define SPI_BUF_SIZE 40  // maximum of rx/tx sizes
+#define SPI_BUF_SIZE 56  // maximum of rx/tx sizes
+
+typedef int64_t fixp_t;  // 32.32 fixed point type to somewhat distinguish it from integers
+#define FIXED_POINT 32
+#define FIXED_ONE (1LL << FIXED_POINT)
 
 #pragma pack(push, 2)
 
 // struct for LinuxCNC -> PRU communication
-// byte size: 40
+// byte size: 56
 typedef union {
-  struct {
-    uint8_t buffer[SPI_BUF_SIZE];
-  };
+  uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    volatile int32_t stepper_freq_command[STEPPERS];
+    volatile fixp_t stepgen_freq_command[STEPGENS];
     int32_t output_vars[OUTPUT_VARS];
-    uint8_t stepper_enable;
+    uint8_t stepgen_enable_mask;
     uint16_t outputs;
   };
 } linuxCncData_t;
 
 // struct for PRU -> LinuxCNC communication
-// byte size: 34
+// byte size: 50
 typedef union {
-  struct {
-    uint8_t buffer[SPI_BUF_SIZE];
-  };
+  uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    int32_t stepper_feedback[STEPPERS];
+    fixp_t stepgen_feedback[STEPGENS];
     int32_t input_vars[INPUT_VARS];
     uint16_t inputs;
   };

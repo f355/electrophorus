@@ -1,10 +1,8 @@
-setp carvera.stepper.a.scale [JOINT_3]SCALE
-setp carvera.stepper.a.maxvel [JOINT_3]STEPGEN_MAXVEL
-setp carvera.stepper.a.maxaccel [JOINT_3]STEPGEN_MAXACCEL
-setp carvera.stepper.a.pgain [JOINT_3]PGAIN
-setp carvera.stepper.a.ff1gain [JOINT_3]FF1GAIN
+setp carvera.stepgen.a.position-scale [JOINT_3]SCALE
+setp carvera.stepgen.a.maxvel [JOINT_3]STEPGEN_MAXVEL
+setp carvera.stepgen.a.maxaccel [JOINT_3]STEPGEN_MAXACCEL
 
-net a-pos-cmd joint.3.motor-pos-cmd => carvera.stepper.a.pos-cmd
-net a-pos-fb carvera.stepper.a.pos-fb => joint.3.motor-pos-fb
-net a-enable joint.3.amp-enable-out => carvera.stepper.a.enable => carvera.output.axis-enable-a
-net a-home carvera.input.endstop-a => joint.3.home-sw-in
+net joint.a.position-cmd joint.3.motor-pos-cmd => carvera.stepgen.a.position-cmd
+net joint.a.position-fb carvera.stepgen.a.position-fb => joint.3.motor-pos-fb
+net joint.a.enable joint.3.amp-enable-out => carvera.stepgen.a.enable => carvera.output.axis-enable-a
+net joint.a.home carvera.input.endstop-a => joint.3.home-sw-in

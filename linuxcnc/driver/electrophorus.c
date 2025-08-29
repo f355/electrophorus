@@ -57,32 +57,38 @@ MODULE_LICENSE("GPL v3");
 
 #define RPI5_RP1_PERI_BASE 0x7c000000
 
+#define f_period_s ((double)(l_period_ns * 1e-9))
+
 typedef struct {
-  // parameters
-  hal_float_t scale;     // steps per position unit
-  hal_float_t maxvel;    // max velocity, (pos units/sec)
-  hal_float_t maxaccel;  // max accel (pos units/sec^2)
-  hal_float_t pgain;     // PID proportional gain
-  hal_float_t ff1gain;   // PID first derivative gain
-  hal_float_t deadband;  // don't try to correct position errors less than this value
+  struct {
+    struct {
+      hal_float_t *position_cmd;  // in: position command (position units)
+      hal_float_t *velocity_cmd;  // in: velocity command
+      hal_s32_t *counts;          // out: position feedback (raw counts)
+      hal_float_t *position_fb;   // out: position feedback (position units)
+      hal_float_t *velocity_fb;   // out: velocity feedback
+      hal_bit_t *enable;          // is the stepper enabled?
+      hal_bit_t *control_type;    // 0="position control", 1="velocity control"
+      hal_bit_t *position_reset;  // reset position when true
+    } pin;
 
-  // pins
-  hal_bit_t *enabled;     // is the stepper enabled?
-  hal_float_t *pos_cmd;   // in: position command (position units)
-  hal_float_t *pos_fb;    // out: position feedback (position units)
-  hal_s32_t *count;       // out: position feedback (raw counts)
-  hal_float_t *freq_cmd;  // out: frequency command monitoring, available in LinuxCNC
+    struct {
+      hal_float_t position_scale;  // steps per position unit
+      hal_float_t maxvel;          // max velocity, (pos units/sec)
+      hal_float_t maxaccel;        // max accel (pos units/sec^2)
+    } param;
+  } hal;
 
-  // other state
-  int32_t prev_count;   // previous count for spike filtering
-  int8_t filter_count;  // the number of times spike filter fired
-  float freq;           // frequency command sent to PRU
-  float old_scale;      // stored scale value
-  float prev_cmd;       // previous command to calculate the derivative for PID
+  // this variable holds the previous position command, for
+  // computing the feedforward velocity
+  hal_float_t old_position_cmd;
+
+  fixp_t prev_accumulator;
+  int64_t subcounts;
 } stepper_state_t;
 
 typedef struct {
-  stepper_state_t *steppers[STEPPERS];
+  stepper_state_t stepgens[STEPGENS];
 
   hal_bit_t *spi_enable;  // in: are SPI comms enabled?
   hal_bit_t *spi_reset;   // in: should go low when the machine is pulled out of e-stop
@@ -112,18 +118,12 @@ static const char *prefix = PREFIX;
 
 enum { BCM = 0, RP1 } spi_driver = BCM;
 
-static long old_dtns;    // update_freq function period in nsec - (THIS IS RUNNING IN THE PI)
-static double dt;        // update_freq period in seconds  - (THIS IS RUNNING IN THE PI)
-static double recip_dt;  // recprocal of period, avoids divides
-
-static int reset_gpio_pin = 25;  // RPI GPIO pin number used to force watchdog reset of the PRU
-
 static bool pin_err(int retval);
 static int rt_peripheral_init();
 static int rt_bcm2835_init();
 static int rt_rp1lib_init();
 
-static void update_freq(void *arg, long period);
+static void update_freq(void *arg, long l_period_ns);
 static void spi_write();
 static void spi_read();
 static void spi_transfer();
@@ -149,96 +149,95 @@ int rtapi_app_main(void) {
     return -1;
   }
 
-  switch (spi_driver) {
-    case BCM:
-      bcm2835_gpio_fsel(reset_gpio_pin, BCM2835_GPIO_FSEL_OUTP);
-      break;
-    case RP1:
-      gpio_set_fsel(reset_gpio_pin, GPIO_FSEL_OUTPUT);
-  }
-
   if (pin_err(hal_pin_bit_newf(HAL_IN, &state->spi_enable, comp_id, "%s.spi-enable", prefix))) return -1;
   if (pin_err(hal_pin_bit_newf(HAL_IN, &state->spi_reset, comp_id, "%s.spi-reset", prefix))) return -1;
   if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->spi_status, comp_id, "%s.spi-status", prefix))) return -1;
 
-  int n;
   // export all the variables for each stepper and pin
-  for (n = 0; n < STEPPERS; n++) {
-    stepper_state_t *stepper = hal_malloc(sizeof(stepper_state_t));
-    if (stepper == 0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc(state->steppers[%d]) failed\n", modname, n);
-      hal_exit(comp_id);
-      return -1;
-    }
-    state->steppers[n] = stepper;
+  for (int i = 0; i < STEPGENS; i++) {
+    stepper_state_t *s = &state->stepgens[i];
 
-    char *stepper_names[STEPPERS] = STEPPER_NAMES;
-    char *name = stepper_names[n];
+    char *stepper_names[STEPGENS] = STEPGEN_NAMES;
+    char *name = stepper_names[i];
 
-    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->scale, comp_id, "%s.stepper.%s.scale", prefix, name))) return -1;
-    stepper->scale = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->maxvel, comp_id, "%s.stepper.%s.maxvel", prefix, name)))
+    typeof(s->hal.param) *par = &s->hal.param;
+
+    if (pin_err(
+            hal_param_float_newf(HAL_RW, &par->position_scale, comp_id, "%s.stepgen.%s.position-scale", prefix, name)))
       return -1;
-    stepper->maxvel = 0.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->maxaccel, comp_id, "%s.stepper.%s.maxaccel", prefix, name)))
+    par->position_scale = 1.0;
+
+    if (pin_err(hal_param_float_newf(HAL_RW, &par->maxvel, comp_id, "%s.stepgen.%s.maxvel", prefix, name))) return -1;
+    par->maxvel = 0.0;
+
+    if (pin_err(hal_param_float_newf(HAL_RW, &par->maxaccel, comp_id, "%s.stepgen.%s.maxaccel", prefix, name)))
       return -1;
-    stepper->maxaccel = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->pgain, comp_id, "%s.stepper.%s.pgain", prefix, name))) return -1;
-    stepper->pgain = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->ff1gain, comp_id, "%s.stepper.%s.ff1gain", prefix, name)))
-      return -1;
-    stepper->ff1gain = 1.0;
-    if (pin_err(hal_param_float_newf(HAL_RW, &stepper->deadband, comp_id, "%s.stepper.%s.deadband", prefix, name)))
+    par->maxaccel = 1.0;
+
+    typeof(s->hal.pin) *pin = &s->hal.pin;
+
+    if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->enable, comp_id, "%s.stepgen.%s.enable", prefix, name))) return -1;
+
+    if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->control_type, comp_id, "%s.stepgen.%s.control-type", prefix, name)))
       return -1;
 
-    if (pin_err(hal_pin_bit_newf(HAL_IN, &stepper->enabled, comp_id, "%s.stepper.%s.enable", prefix, name))) return -1;
-    if (pin_err(hal_pin_float_newf(HAL_IN, &stepper->pos_cmd, comp_id, "%s.stepper.%s.pos-cmd", prefix, name)))
+    if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->position_reset, comp_id, "%s.stepgen.%s.position-reset", prefix, name)))
       return -1;
-    *stepper->pos_cmd = 0.0;
-    if (pin_err(hal_pin_float_newf(HAL_OUT, &stepper->freq_cmd, comp_id, "%s.stepper.%s.freq-cmd", prefix, name)))
+
+    if (pin_err(hal_pin_float_newf(HAL_IN, &pin->position_cmd, comp_id, "%s.stepgen.%s.position-cmd", prefix, name)))
       return -1;
-    *stepper->freq_cmd = 0.0;
-    if (pin_err(hal_pin_float_newf(HAL_OUT, &stepper->pos_fb, comp_id, "%s.stepper.%s.pos-fb", prefix, name)))
+    *pin->position_cmd = 0.0;
+
+    if (pin_err(hal_pin_float_newf(HAL_IN, &pin->velocity_cmd, comp_id, "%s.stepgen.%s.velocity-cmd", prefix, name)))
       return -1;
-    *stepper->pos_fb = 0.0;
-    if (pin_err(hal_pin_s32_newf(HAL_OUT, &stepper->count, comp_id, "%s.stepper.%s.counts", prefix, name))) return -1;
-    *stepper->count = 0;
+    *pin->velocity_cmd = 0.0;
+
+    if (pin_err(hal_pin_float_newf(HAL_OUT, &pin->position_fb, comp_id, "%s.stepgen.%s.position-fb", prefix, name)))
+      return -1;
+    *pin->position_fb = 0.0;
+
+    if (pin_err(hal_pin_float_newf(HAL_OUT, &pin->velocity_fb, comp_id, "%s.stepgen.%s.velocity-fb", prefix, name)))
+      return -1;
+    *pin->velocity_fb = 0.0;
+
+    if (pin_err(hal_pin_s32_newf(HAL_OUT, &pin->counts, comp_id, "%s.stepgen.%s.counts", prefix, name))) return -1;
+    *pin->counts = 0;
   }
 
-  for (n = 0; n < OUTPUT_VARS; n++) {
+  for (int i = 0; i < OUTPUT_VARS; i++) {
     const char *output_var_names[OUTPUT_VARS] = OUTPUT_VAR_NAMES;
-    if (pin_err(hal_pin_float_newf(HAL_IN, &state->output_vars[n], comp_id, "%s.output-var.%s", prefix,
-                                   output_var_names[n])))
+    if (pin_err(hal_pin_float_newf(HAL_IN, &state->output_vars[i], comp_id, "%s.output-var.%s", prefix,
+                                   output_var_names[i])))
       return -1;
-    *state->output_vars[n] = 0;
+    *state->output_vars[i] = 0;
   }
 
-  for (n = 0; n < INPUT_VARS; n++) {
+  for (int i = 0; i < INPUT_VARS; i++) {
     const char *input_var_names[INPUT_VARS] = INPUT_VAR_NAMES;
     if (pin_err(
-            hal_pin_float_newf(HAL_OUT, &state->input_vars[n], comp_id, "%s.input-var.%s", prefix, input_var_names[n])))
+            hal_pin_float_newf(HAL_OUT, &state->input_vars[i], comp_id, "%s.input-var.%s", prefix, input_var_names[i])))
       return -1;
-    *state->input_vars[n] = 0;
+    *state->input_vars[i] = 0;
   }
 
-  for (n = 0; n < OUTPUT_PINS; n++) {
+  for (int i = 0; i < OUTPUT_PINS; i++) {
     const outputPin_t output_pins[OUTPUT_PINS] = OUTPUT_PIN_DESC;
-    if (pin_err(hal_pin_bit_newf(HAL_IN, &state->outputs[n], comp_id, "%s.output.%s", prefix, output_pins[n].name)))
+    if (pin_err(hal_pin_bit_newf(HAL_IN, &state->outputs[i], comp_id, "%s.output.%s", prefix, output_pins[i].name)))
       return -1;
-    *state->outputs[n] = 0;
+    *state->outputs[i] = 0;
   }
 
-  for (n = 0; n < INPUT_PINS; n++) {
+  for (int i = 0; i < INPUT_PINS; i++) {
     const inputPin_t input_pins[INPUT_PINS] = INPUT_PIN_DESC;
-    if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->inputs[n], comp_id, "%s.input.%s", prefix, input_pins[n].name)))
+    if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->inputs[i], comp_id, "%s.input.%s", prefix, input_pins[i].name)))
       return -1;
-    *state->inputs[n] = 0;
+    *state->inputs[i] = 0;
 
     // inverted 'not' pins offset by the number of inputs we have.
-    if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->inputs[n + INPUT_PINS], comp_id, "%s.input.%s.not", prefix,
-                                 input_pins[n].name)))
+    if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->inputs[i + INPUT_PINS], comp_id, "%s.input.%s.not", prefix,
+                                 input_pins[i].name)))
       return -1;
-    *state->inputs[n + INPUT_PINS] = 0;
+    *state->inputs[i + INPUT_PINS] = 0;
   }
 
   // Export functions
@@ -284,128 +283,173 @@ bool pin_err(const int retval) {
   return false;
 }
 
-// TODO(f355): do we need all this? LinuxCNC's standard PID component would probably do a better job.
-void update_freq(void *arg, const long period) {
-  const state_t *state = arg;
+static void stepgen_instance_position_control(stepper_state_t *s, const long l_period_ns, double *new_vel) {
+  //(*s->hal.pin.dbg_pos_minus_prev_cmd) = (*s->hal.pin.position_fb) - s->old_position_cmd;
 
-  // calc constants related to the period of this function (LinuxCNC SERVO_THREAD)
-  // only recalc constants if period changes
-  if (period != old_dtns) {     // Note!! period = LinuxCNC SERVO_PERIOD
-    old_dtns = period;          // get ready to detect future period changes
-    recip_dt = 1.0e9 / period;  // calc the reciprocal once here, to avoid multiple divides later
-    dt = 1.0 / recip_dt;        // dt is the period of this thread, used for the position loop
+  // calculate feed-forward velocity in machine units per second
+  const double ff_vel = (*s->hal.pin.position_cmd - s->old_position_cmd) / f_period_s;
+  //(*s->hal.pin.dbg_ff_vel) = ff_vel;
+
+  s->old_position_cmd = *s->hal.pin.position_cmd;
+
+  const double velocity_error = *s->hal.pin.velocity_fb - ff_vel;
+  // (*s->hal.pin.dbg_vel_error) = velocity_error;
+
+  // Do we need to change speed to match the speed of position-cmd?
+  // If maxaccel is 0, there's no accel limit: fix this velocity error
+  // by the next servo period!  This leaves acceleration control up to
+  // the trajectory planner.
+  // If maxaccel is not zero, the user has specified a maxaccel and we
+  // adhere to that.
+  double match_accel;
+  if (velocity_error > 0.0) {
+    if (s->hal.param.maxaccel == 0) {
+      match_accel = -velocity_error / f_period_s;
+    } else {
+      match_accel = -s->hal.param.maxaccel;
+    }
+  } else if (velocity_error < 0.0) {
+    if (s->hal.param.maxaccel == 0) {
+      match_accel = velocity_error / f_period_s;
+    } else {
+      match_accel = s->hal.param.maxaccel;
+    }
+  } else {
+    match_accel = 0;
   }
 
+  double seconds_to_vel_match;
+  if (match_accel == 0) {
+    // vel is just right, dont need to accelerate
+    seconds_to_vel_match = 0.0;
+  } else {
+    seconds_to_vel_match = -velocity_error / match_accel;
+  }
+  //*s->hal.pin.dbg_s_to_match = seconds_to_vel_match;
+
+  // compute expected position at the time of velocity match
+  // Note: this is "feedback position at the beginning of the servo period after we attain velocity match"
+  double position_at_match;
+  {
+    double avg_v = (ff_vel + *s->hal.pin.velocity_fb) * 0.5;
+    position_at_match = *s->hal.pin.position_fb + avg_v * (seconds_to_vel_match + f_period_s);
+  }
+
+  // Note: this assumes that position-cmd keeps the current velocity
+  const double position_cmd_at_match = *s->hal.pin.position_cmd + ff_vel * seconds_to_vel_match;
+  const double error_at_match = position_at_match - position_cmd_at_match;
+
+  //*s->hal.pin.dbg_err_at_match = error_at_match;
+
+  double velocity_cmd;
+  if (seconds_to_vel_match < f_period_s) {
+    // we can match velocity in one period
+    // try to correct whatever position error we have
+    velocity_cmd = ff_vel - (0.5 * error_at_match / f_period_s);
+
+    // apply accel limits?
+    if (s->hal.param.maxaccel > 0) {
+      if (velocity_cmd > *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s) {
+        velocity_cmd = *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s;
+      } else if (velocity_cmd < *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s) {
+        velocity_cmd = *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s;
+      }
+    }
+
+  } else {
+    // we're going to have to work for more than one period to match velocity
+    // FIXME: I dont really get this part yet
+
+    // calculate change in final position if we ramp in the opposite direction for one period
+    const double dv = -2.0 * match_accel * f_period_s;
+    const double dp = dv * seconds_to_vel_match;
+
+    // decide which way to ramp
+    if (fabs(error_at_match + dp * 2.0) < fabs(error_at_match)) {
+      match_accel = -match_accel;
+    }
+
+    // and do it
+    velocity_cmd = *s->hal.pin.velocity_fb + match_accel * f_period_s;
+  }
+
+  *new_vel = velocity_cmd;
+}
+
+void update_freq(void *arg, const long l_period_ns) {
+  state_t *state = arg;
+
   // loop through generators
-  for (int i = 0; i < STEPPERS; i++) {
-    stepper_state_t *stepper = state->steppers[i];
-    // check for scale change
-    if (stepper->scale != stepper->old_scale) {
-      stepper->old_scale = stepper->scale;  // get ready to detect future scale changes
-      // scale must not be 0
-      if ((stepper->scale < 1e-20) && (stepper->scale > -1e-20))  // validate the new scale value
-        stepper->scale = 1.0;                                     // value too small, divide by zero is a bad thing
+  for (int i = 0; i < STEPGENS; i++) {
+    stepper_state_t *s = &state->stepgens[i];
+
+    // first sanity-check our maxaccel and maxvel params
+    // maxvel must be >= 0.0, and may not be faster than 1 step per (steplen+stepspace) seconds
+
+    const double max_steps_per_s = (double)BASE_FREQUENCY / 2.0;
+
+    // max vel supported by current step timings & position-scale
+    const double physical_maxvel = max_steps_per_s / fabs(s->hal.param.position_scale);
+    // physical_maxvel = force_precision(physical_maxvel);
+
+    if (s->hal.param.maxvel < 0.0) {
+      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxvel < 0, setting to its absolute value\n", i);
+      s->hal.param.maxvel = fabs(s->hal.param.maxvel);
     }
 
-    // calculate frequency limit
-    double max_freq = BASE_FREQUENCY;
+    if (s->hal.param.maxvel > physical_maxvel) {
+      rtapi_print_msg(
+          RTAPI_MSG_ERR,
+          "stepgen.%02d.maxvel is too big for current step timings (%f steps/s) & position-scale (%f), clipping to "
+          "max possible (%f)\n",
+          i, max_steps_per_s, s->hal.param.position_scale, physical_maxvel);
+      s->hal.param.maxvel = physical_maxvel;
+    }
 
-    // check for user specified frequency limit parameter
-    if (stepper->maxvel <= 0.0) {
-      // set to zero if negative
-      stepper->maxvel = 0.0;
+    double maxvel;  // actual max vel to use this time
+
+    if (s->hal.param.maxvel == 0.0) {
+      maxvel = physical_maxvel;
     } else {
-      // parameter is non-zero, compare to max_freq
-      const double desired_freq = stepper->maxvel * fabs(stepper->scale);
-
-      if (desired_freq > max_freq) {
-        // parameter is too high, limit it
-        stepper->maxvel = max_freq / fabs(stepper->scale);
-      } else {
-        // lower max_freq to match parameter
-        max_freq = stepper->maxvel * fabs(stepper->scale);
-      }
+      maxvel = s->hal.param.maxvel;
     }
 
-    /* set internal accel limit to its absolute max, which is
-    zero to full speed in one thread period */
-    double max_ac = max_freq * recip_dt;
-
-    // check for user specified accel limit parameter
-    if (stepper->maxaccel <= 0.0) {
-      // set to zero if negative
-      stepper->maxaccel = 0.0;
-    } else {
-      // parameter is non-zero, compare to max_ac
-      if (stepper->maxaccel * fabs(stepper->scale) > max_ac) {
-        // parameter is too high, lower it
-        stepper->maxaccel = max_ac / fabs(stepper->scale);
-      } else {
-        // lower limit to match parameter
-        max_ac = stepper->maxaccel * fabs(stepper->scale);
-      }
+    // maxaccel may not be negative
+    if (s->hal.param.maxaccel < 0.0) {
+      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxaccel < 0, setting to its absolute value\n", i);
+      s->hal.param.maxaccel = fabs(s->hal.param.maxaccel);
     }
 
-    /* at this point, all scaling, limits, and other parameter
-    changes have been handled - time for the main control */
-
-    double vel_cmd = 0.0;
-
-    const double command = *stepper->pos_cmd;
-    const double feedback = *stepper->pos_fb;
-    const double error = command - feedback;
-
-    double deadband;
-
-    if (stepper->deadband != 0) {
-      deadband = stepper->deadband;
-    } else {
-      // default deadband to slightly more than half a step
-      deadband = 0.6 / stepper->scale;
-    }
-
-    // use Proportional control with feed forward (pgain, ff1gain and deadband)
-    if (fabs(error) > fabs(deadband)) {
-      const float cmd_d = (command - stepper->prev_cmd) * recip_dt;
-      stepper->prev_cmd = command;
-      vel_cmd = stepper->pgain * error + cmd_d * stepper->ff1gain;
-    }
-
-    vel_cmd *= stepper->scale;
-
-    // apply frequency limit
-    if (vel_cmd > max_freq) {
-      vel_cmd = max_freq;
-    } else if (vel_cmd < -max_freq) {
-      vel_cmd = -max_freq;
-    }
-
-    // calc max change in frequency in one period
-    const double dv = max_ac * dt;
     double new_vel;
-    // apply accel limit
-    if (vel_cmd > stepper->freq + dv) {
-      new_vel = stepper->freq + dv;
-    } else if (vel_cmd < stepper->freq - dv) {
-      new_vel = stepper->freq - dv;
+    // select the new velocity we want
+    if (*s->hal.pin.control_type == 0) {
+      stepgen_instance_position_control(s, l_period_ns, &new_vel);
     } else {
-      new_vel = vel_cmd;
+      // velocity-mode control is easy
+      new_vel = *s->hal.pin.velocity_cmd;
+      if (s->hal.param.maxaccel > 0.0) {
+        if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) > s->hal.param.maxaccel) {
+          new_vel = (*s->hal.pin.velocity_fb) + (s->hal.param.maxaccel * f_period_s);
+        } else if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) < -s->hal.param.maxaccel) {
+          new_vel = (*s->hal.pin.velocity_fb) - (s->hal.param.maxaccel * f_period_s);
+        }
+      }
     }
 
-    // test for disabled stepgen
-    if (*stepper->enabled == 0) {
-      // set velocity to zero
-      new_vel = 0;
+    // clip velocity to maxvel
+    if (new_vel > maxvel) {
+      new_vel = maxvel;
+    } else if (new_vel < -maxvel) {
+      new_vel = -maxvel;
     }
 
-    stepper->freq = new_vel;             // to be sent to the PRU
-    *stepper->freq_cmd = stepper->freq;  // feedback to LinuxCNC
+    *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
+
+    tx_data.stepgen_freq_command[i] = (fixp_t)(new_vel * s->hal.param.position_scale * FIXED_ONE);
   }
 }
 
 void spi_read() {
-  int i;
-
   // Data header
   tx_data.header = PRU_READ;
 
@@ -422,40 +466,53 @@ void spi_read() {
           // we have received a GOOD payload from the PRU
           *state->spi_status = 1;
 
-          for (i = 0; i < STEPPERS; i++) {
-            stepper_state_t *stepper = state->steppers[i];
+          for (int i = 0; i < STEPGENS; i++) {
+            stepper_state_t *s = &state->stepgens[i];
 
-            // TODO(f355): do we need spike filtering? how could those spikes happen with closed-loop motors?
-            // at the moment, it just tries to filter non-zeroes when LinuxCNC is restarted with the PRU running,
-            // which makes no sense at all.
-            // Feedback spike filter parameters
-            const int M = 250;
-            const int n = 2;
-            int32_t current_count = rx_data.stepper_feedback[i];
-            const int32_t accum_diff = current_count - stepper->prev_count;
+            const fixp_t acc = rx_data.stepgen_feedback[i];
 
-            // spike filter
-            if (abs(accum_diff) > M && stepper->filter_count < n) {
-              // recent big change: hold previous value
-              stepper->filter_count++;
-              current_count = stepper->prev_count;
-              rtapi_print("Spike filter active[%d][%d]: %d\n", i, stepper->filter_count, accum_diff);
-            } else {
-              // normal operation, or else the big change must be real after all
-              stepper->prev_count = current_count;
-              stepper->filter_count = 0;
+            // those tricky users are always trying to get us to divide by zero
+            if (fabs(s->hal.param.position_scale) < 1e-6) {
+              if (s->hal.param.position_scale >= 0.0) {
+                s->hal.param.position_scale = 1.0;
+                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
+              } else {
+                s->hal.param.position_scale = -1.0;
+                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
+              }
             }
 
-            *stepper->count = current_count;
-            *stepper->pos_fb = (float)current_count / stepper->scale;
+            // The accumulator is a 32.32 bit fixed-point
+            // representation of the current stepper position.
+            // The fractional part gives accurate velocity at low speeds, and
+            // sub-step position feedback (like sw stepgen).
+            fixp_t acc_delta = acc - s->prev_accumulator;
+            if (acc_delta > INT64_MAX) {
+              acc_delta -= UINT64_MAX;
+            } else if (acc_delta < INT64_MIN) {
+              acc_delta += UINT64_MAX;
+            }
+
+            s->subcounts += acc_delta;
+
+            if (*s->hal.pin.position_reset != 0) {
+              s->subcounts = 0;
+            }
+
+            *s->hal.pin.counts = (int32_t)(s->subcounts / FIXED_ONE);
+
+            // note that it's important to use "subcounts/(1 << STEP_BIT)" instead of just
+            // "counts" when computing position_fb, because position_fb needs sub-count precision
+            *s->hal.pin.position_fb = (double)s->subcounts / FIXED_ONE / s->hal.param.position_scale;
+            s->prev_accumulator = acc;
           }
 
-          for (i = 0; i < INPUT_VARS; i++) {
+          for (int i = 0; i < INPUT_VARS; i++) {
             *state->input_vars[i] = rx_data.input_vars[i];
           }
 
           // Inputs
-          for (i = 0; i < INPUT_PINS; i++) {
+          for (int i = 0; i < INPUT_PINS; i++) {
             if ((rx_data.inputs & (1 << i)) != 0) {
               *state->inputs[i] = 1;               // input is high
               *state->inputs[i + INPUT_PINS] = 0;  // inverted 'not' is offset by number of digital inputs.
@@ -484,18 +541,17 @@ void spi_write() {
 
   tx_data.header = PRU_WRITE;
 
-  for (i = 0; i < STEPPERS; i++) {
-    const stepper_state_t *stepper = state->steppers[i];
-    tx_data.stepper_freq_command[i] = stepper->freq;
-    if (*stepper->enabled == 1) {
-      tx_data.stepper_enable |= 1 << i;
+  for (i = 0; i < STEPGENS; i++) {
+    const stepper_state_t *s = &state->stepgens[i];
+    if (*s->hal.pin.enable == 1) {
+      tx_data.stepgen_enable_mask |= 1 << i;
     } else {
-      tx_data.stepper_enable &= ~(1 << i);
+      tx_data.stepgen_enable_mask &= ~(1 << i);
     }
   }
 
   for (i = 0; i < OUTPUT_VARS; i++) {
-    tx_data.output_vars[i] = *state->output_vars[i];
+    tx_data.output_vars[i] = (int32_t)*state->output_vars[i];
   }
 
   for (i = 0; i < OUTPUT_PINS; i++) {
@@ -612,8 +668,8 @@ int rt_peripheral_init(void) {
         return -1;
       }
 
-      // TODO: Allow user to select SPI number, CS number and frequency// SPIx, CSx, mode, freq. Clock frequency here is
-      // different than Pi4, this will get rounded to nearest clock divider. TODO Figure out exact value that works
+      // TODO: Allow user to select SPI number, CS number and frequency// SPIx, CSx, mode, freq. Clock frequency here
+      // is different than Pi4, this will get rounded to nearest clock divider. TODO Figure out exact value that works
       // best.
       rp1spi_init(0, 0, SPI_MODE_0, 40000000);
   }
@@ -747,7 +803,7 @@ int rt_rp1lib_init(void) {
   inst->mem_fd = rtapi_open_as_root("/dev/mem", O_RDWR | O_SYNC);
   if (inst->mem_fd < 0) return errno;
 
-  inst->priv = mmap(NULL, RP1_BAR1_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, inst->mem_fd, inst->phys_addr);
+  inst->priv = mmap(NULL, RP1_BAR1_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, inst->mem_fd, (int64_t)inst->phys_addr);
 
   DEBUG_PRINT("Base address: %11lx, size: %x, mapped at address: %p\n", inst->phys_addr, RP1_BAR1_LEN, inst->priv);
 

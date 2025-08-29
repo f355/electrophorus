@@ -18,9 +18,9 @@ setp level-map.power.x-level-01 45.0
 setp level-map.power.y-level-01 600.0
 setp level-map.power.x-level-02 60.0
 setp level-map.power.y-level-02 1000.0
-net therm-power-in carvera.input-var.power-supply-temperature => therm.power.v-thermistor
-net therm-power-level therm.power.temperature-c => level-map.power.in
-net therm-power-out level-map.power.out => carvera.output-var.power-supply-fan-duty
+net therm.power.in carvera.input-var.power-supply-temperature => therm.power.v-thermistor
+net therm.power.level therm.power.temperature-c => level-map.power.in
+net therm.power.out level-map.power.out => carvera.output-var.power-supply-fan-duty
 
 # spindle
 setp therm.spindle.r0 [THERM_SPINDLE]R0
@@ -35,6 +35,6 @@ setp level-map.spindle.x-level-01 45.0
 setp level-map.spindle.y-level-01 600.0
 setp level-map.spindle.x-level-02 60.0
 setp level-map.spindle.y-level-02 1000.0
-net therm-spindle-in carvera.input-var.spindle-temperature => therm.spindle.v-thermistor
-net therm-spindle-level therm.spindle.temperature-c => level-map.spindle.in
-net therm-spindle-out level-map.spindle.out => carvera.output-var.spindle-fan-duty
+net therm.spindle.in carvera.input-var.spindle-temperature => therm.spindle.v-thermistor
+net therm.spindle.level therm.spindle.temperature-c => level-map.spindle.in
+net therm.spindle.out level-map.spindle.out => carvera.output-var.spindle-fan-duty

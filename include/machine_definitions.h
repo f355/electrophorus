@@ -3,12 +3,12 @@
 
 #include "machinedef_types.h"
 
-#define BASE_FREQUENCY 100000  // 100 kHz
+#define BASE_FREQUENCY 120000  // 120 kHz
 #define SERVO_FREQUENCY 1000   // 1 kHz
 
-#define STEPPERS 4
+#define STEPGENS 4
 
-#define STEPPER_NAMES {"x", "y", "z", "a"};
+#define STEPGEN_NAMES {"x", "y", "z", "a"};
 
 #define INPUT_PINS 14
 
