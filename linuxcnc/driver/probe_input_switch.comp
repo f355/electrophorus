@@ -14,15 +14,24 @@ than that of the tool setter, the tool setter would trigger first and this defle
 
 This component solves that by selecting either of the inputs based on the current tool number.
 
-1. If the active tool number (probe_input_switch.tool-number) is equal to the probe tool number
-   in the library (probe_input_switch.probe-number), the probe signal (probe_input_switch.probe-in)
-   is copied to the output (probe_input_switch.out).
-2. Otherwise, the tool setter input (probe_input_switch.tool-setter-in) is copied to the output.
+1. Under normal operation, both inputs (probe_input_switch.probe-in and probe_input_switch.tool-setter-in) are ORed and
+   the result is fed into probe_input_switch.out.
+2. When the following two conditions are met, the inputs are ANDed instead:
+   * The active tool number (probe_input_switch.tool-number) is equal to the probe tool number
+     in the library (probe_input_switch.probe-number);
+   * The current X and Y machine coordinates (probe_input_switch.current-x and probe_input_switch.current-y)
+     are within the rectangle centered on the tool setter (probe_input_switch.tool-setter-x and
+     probe_input_switch.tool-setter-y) with the side equal to probe_input_switch.tool-setter-size.
 
-CAUTION: if you accidentally put a wrong tool in the spindle instead of the touch probe,
-or the touch probe is not working properly for some reason, you WILL crash the machine!
-Always check that the touch probe is powered and working, LinuxCNC GUIs typically have an LED in the interface
-that lights up when the probe is triggered.
+The pin names assume that the tool setter is mounted vertically along the Z axis, however, that is not a requirement,
+feel free to ignore the naming and use different axes for the coordinate inputs to accommodate the way your machine
+is set up.
+
+CAUTION:
+1. if you accidentally put a wrong tool in the spindle instead of the touch probe, or the touch probe is not working
+   properly for some reason, you WILL crash the machine! Always check that the touch probe is powered and working,
+   LinuxCNC GUIs typically have an LED in the interface that lights up when the probe is triggered.
+2. Do not try to use the touch probe within the tool setter rectangle, you WILL break the probe.
 
 """;
 
@@ -30,11 +39,18 @@ examples """
 loadrt probe_input_switch
 addf probe_input_switch servo-thread
 
+// 10mm rectangle centered on (-10, -10)
+setp probe_input_switch.tool-setter-x -10.0
+setp probe_input_switch.tool-setter-y -10.0
+setp probe_input_switch.tool-setter-size 10.0
 setp probe_input_switch.probe-number 99
-net probe-input <your touch probe pin> => probe_input_switch.probe-in
-net tool-setter-input <your tool setter pin> => probe_input_switch.tool-setter-in
-net probe-tool-number iocontrol.0.tool-number => probe_input_switch.tool-number
-net probe-out probe_input_switch.out => motion.probe-input
+
+net probe_input_switch.probe-input <your touch probe pin> => probe_input_switch.probe-in
+net probe_input_switch.tool-setter-input <your tool setter pin> => probe_input_switch.tool-setter-in
+net probe_input_switch.probe-tool-number iocontrol.0.tool-number => probe_input_switch.tool-number
+net probe_input_switch.current-x joint.0.pos-fb => probe_input_switch.current-x
+net probe_input_switch.current-y joint.1.pos-fb => probe_input_switch.current-y
+net probe_input_switch.out probe_input_switch.out => motion.probe-input
 
 """;
 
@@ -44,14 +60,27 @@ license "GPL";
 option singleton yes;
 
 param rw s32 probe-number "Touch probe tool number in the tool library";
+param rw float tool-setter-x "X machine coordinate of the tool setter center";
+param rw float tool-setter-y "Y machine coordinate of the tool setter center";
+param rw float tool-setter-size "XY size of the tool setter in machine units";
 
 pin in s32 tool-number "Current/active tool number";
+pin in float current-x "Current X machine coordinate";
+pin in float current-y "Current Y machine coordinate";
 pin in bit probe-in "Touch probe input";
 pin in bit tool-setter-in "Tool setter input";
 pin out bit out_ "The output value";
 
-function _ nofp;
+function _;
 
 ;;
 
-FUNCTION(_){ out_ = tool_number == probe_number ? probe_in : tool_setter_in; }
+FUNCTION(_) {
+  hal_float_t r = tool_setter_size * 0.5;
+  if ((current_x > tool_setter_x - r) && (current_x < tool_setter_x + r) &&
+      (current_y > tool_setter_y - r) && (current_y < tool_setter_y + r)) {
+    out_ = probe_in && tool_setter_in;
+  } else {
+    out_ = probe_in || tool_setter_in;
+  }
+}
