@@ -2,9 +2,8 @@ component probe_input_switch "switches probe input based on the selected tool";
 description """This component is intended to be used on machines
 equipped with both the tool setter on the bed and the spindle touch probe.
 
-Under normal operation, the tool setter input should be used for motion.probe-input,
-in order to measure the tool length on Tx M6 commands.
-If we need to use the touch probe, its input should be used instead.
+Under normal operation, the tool setter input should be used for motion.probe-input, in order to measure
+the tool length on Tx M6 commands. If we need to use the touch probe, its input should be used instead.
 
 Combining the inputs with a simple boolean OR would generally work.
 
@@ -27,30 +26,39 @@ The pin names assume that the tool setter is mounted vertically along the Z axis
 feel free to ignore the naming and use different axes for the coordinate inputs to accommodate the way your machine
 is set up.
 
+In addition to solving the above issue, this component provides rudimentary probe crash protection:
+when either of the input signals triggers, the current values of probe_input_switch.current-<axis> are latched
+to memory and the subsequent motion is tracked. If the distance from the latched point gets greater than
+probe_input_switch.max-probing-distance, the probe_input_switch.probe-alarm pin is set to TRUE, you can connect it to
+motion.feed-inhibit and/or motion.jog-inhibit. When both input signals are set to FALSE, the latching is reset.
+
 CAUTION:
 1. if you accidentally put a wrong tool in the spindle instead of the touch probe, or the touch probe is not working
    properly for some reason, you WILL crash the machine! Always check that the touch probe is powered and working,
    LinuxCNC GUIs typically have an LED in the interface that lights up when the probe is triggered.
 2. Do not try to use the touch probe within the tool setter rectangle, you WILL break the probe.
+3. The rotary axis movements are not considered in the crash protection. It is very rare to probe rotation, but if you
+   do, please don't rely on this component.
 
 """;
 
 examples """
 loadrt probe_input_switch
-addf probe_input_switch servo-thread
+addf probe-input-switch servo-thread
 
 // 10mm rectangle centered on (-10, -10)
-setp probe_input_switch.tool-setter-x -10.0
-setp probe_input_switch.tool-setter-y -10.0
-setp probe_input_switch.tool-setter-size 10.0
-setp probe_input_switch.probe-number 99
+setp probe-input-switch.tool-setter-x -10.0
+setp probe-input-switch.tool-setter-y -10.0
+setp probe-input-switch.tool-setter-size 10.0
+setp probe-input-switch.probe-number 99
 
-net probe_input_switch.probe-input <your touch probe pin> => probe_input_switch.probe-in
-net probe_input_switch.tool-setter-input <your tool setter pin> => probe_input_switch.tool-setter-in
-net probe_input_switch.probe-tool-number iocontrol.0.tool-number => probe_input_switch.tool-number
-net probe_input_switch.current-x joint.0.pos-fb => probe_input_switch.current-x
-net probe_input_switch.current-y joint.1.pos-fb => probe_input_switch.current-y
-net probe_input_switch.out probe_input_switch.out => motion.probe-input
+net probe-input-switch.probe-input <your touch probe pin> => probe-input-switch.probe-in
+net probe-input-switch.tool-setter-input <your tool setter pin> => probe-input-switch.tool-setter-in
+net probe-input-switch.probe-tool-number iocontrol.0.tool-number => probe-input-switch.tool-number
+net probe-input-switch.current-x joint.0.pos-fb => probe-input-switch.current-x
+net probe-input-switch.current-y joint.1.pos-fb => probe-input-switch.current-y
+net probe-input-switch.current-y joint.2.pos-fb => probe-input-switch.current-z
+net probe-input-switch.out probe-input-switch.out => motion.probe-input
 
 """;
 
@@ -60,6 +68,7 @@ license "GPL";
 option singleton yes;
 
 param rw s32 probe-number "Touch probe tool number in the tool library";
+param rw float max-probing-distance "Maximum travel distance allowed when probing is active";
 param rw float tool-setter-x "X machine coordinate of the tool setter center";
 param rw float tool-setter-y "Y machine coordinate of the tool setter center";
 param rw float tool-setter-size "XY size of the tool setter in machine units";
@@ -67,13 +76,28 @@ param rw float tool-setter-size "XY size of the tool setter in machine units";
 pin in s32 tool-number "Current/active tool number";
 pin in float current-x "Current X machine coordinate";
 pin in float current-y "Current Y machine coordinate";
+pin in float current-z "Current Z machine coordinate";
 pin in bit probe-in "Touch probe input";
 pin in bit tool-setter-in "Tool setter input";
 pin out bit out_ "The output value";
+pin out bit probe-alarm "The probe or the tool setter has exceeded maximium travel, bad things are about to happen";
+
+pin out float trigger-x;
+pin out float trigger-y;
+pin out float trigger-z;
+pin out float d;
+pin out bool probing;
+
+//variable float trigger_x;
+//variable float trigger_y;
+//variable float trigger_z;
+//variable bool probing;
 
 function _;
 
 ;;
+
+#include "rtapi_math.h"
 
 FUNCTION(_) {
   hal_float_t r = tool_setter_size * 0.5;
@@ -82,5 +106,25 @@ FUNCTION(_) {
     out_ = probe_in && tool_setter_in;
   } else {
     out_ = probe_in || tool_setter_in;
+  }
+  if (!probe_in && !tool_setter_in) {
+    probing = false;
+    return;
+  }
+  if (!probing) {
+    trigger_x = current_x;
+    trigger_y = current_y;
+    trigger_z = current_z;
+    probing = true;
+  } else {
+    //hal_float_t d = sqrt(
+    d = sqrt(
+      (current_x - trigger_x) * (current_x - trigger_x) +
+      (current_y - trigger_y) * (current_y - trigger_y) +
+      (current_z - trigger_z) * (current_z - trigger_z)
+    );
+    if (d >= max_probing_distance) {
+      probe_alarm = true;
+    }
   }
 }
