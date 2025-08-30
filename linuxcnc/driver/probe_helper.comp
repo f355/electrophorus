@@ -1,6 +1,10 @@
-component probe_input_switch "switches probe input based on the selected tool";
-description """This component is intended to be used on machines
-equipped with both the tool setter on the bed and the spindle touch probe.
+component probe_helper "switches probe input based on the selected tool";
+description """This component is intended to help with probing routines.
+
+COMBINING THE INPUTS
+
+On machines equipped with both the tool setter on the bed and the spindle touch probe, combining those two inputs might
+prove tricky.
 
 Under normal operation, the tool setter input should be used for motion.probe-input, in order to measure
 the tool length on Tx M6 commands. If we need to use the touch probe, its input should be used instead.
@@ -10,27 +14,30 @@ Combining the inputs with a simple boolean OR would generally work.
 However, the touch probe usually has a certain amount of deflection (typically 0.01-0.03 mm) before it triggers,
 so when we measure the probe length against the tool setter, and the probe spring is stronger
 than that of the tool setter, the tool setter would trigger first and this deflection would not be accounted for.
+Combining the inputs with AND would solve this, but it won't work for the previous use case.
 
-This component solves that by selecting either of the inputs based on the current tool number.
+This component solves that by changing the logic conditionally:
 
-1. Under normal operation, both inputs (probe_input_switch.probe-in and probe_input_switch.tool-setter-in) are ORed and
-   the result is fed into probe_input_switch.out.
+1. Under normal operation, both inputs (probe_helper.probe-in and probe_helper.tool-setter-in) are ORed and
+   the result is fed into probe_helper.out.
 2. When the following two conditions are met, the inputs are ANDed instead:
-   * The active tool number (probe_input_switch.tool-number) is equal to the probe tool number
-     in the library (probe_input_switch.probe-number);
-   * The current X and Y machine coordinates (probe_input_switch.current-x and probe_input_switch.current-y)
-     are within the rectangle centered on the tool setter (probe_input_switch.tool-setter-x and
-     probe_input_switch.tool-setter-y) with the side equal to probe_input_switch.tool-setter-size.
+   * The active tool number (probe_helper.tool-number) is equal to the probe tool number in the library
+     (probe_helper.probe-number);
+   * The current X and Y machine coordinates (probe_helper.current-x and probe_helper.current-y) are within
+     the rectangle centered on the tool setter (probe_helper.tool-setter-x and probe_helper.tool-setter-y) with
+     the side equal to probe_helper.tool-setter-size.
 
 The pin names assume that the tool setter is mounted vertically along the Z axis, however, that is not a requirement,
 feel free to ignore the naming and use different axes for the coordinate inputs to accommodate the way your machine
 is set up.
 
-In addition to solving the above issue, this component provides rudimentary probe crash protection:
-when either of the input signals triggers, the current values of probe_input_switch.current-<axis> are latched
-to memory and the subsequent motion is tracked. If the distance from the latched point gets greater than
-probe_input_switch.max-probing-distance, the probe_input_switch.probe-alarm pin is set to TRUE, you can connect it to
-motion.feed-inhibit and/or motion.jog-inhibit. When both input signals are set to FALSE, the latching is reset.
+PROBE CRASH PROTECTION
+
+This component also provides rudimentary probe crash protection: when either of the input signals triggers,
+the current values of probe_helper.current-<axis> are latched to memory and the subsequent motion is tracked.
+If the distance from the latched point gets greater than probe_helper.max-probing-distance, the probe_helper.probe-alarm
+pin is set to TRUE, you can connect it to motion.feed-inhibit and/or motion.jog-inhibit. When both input signals are
+set to FALSE, the latching is reset.
 
 CAUTION:
 1. if you accidentally put a wrong tool in the spindle instead of the touch probe, or the touch probe is not working
@@ -43,22 +50,24 @@ CAUTION:
 """;
 
 examples """
-loadrt probe_input_switch
-addf probe-input-switch servo-thread
+loadrt probe_helper
+addf probe-helper servo-thread
 
 // 10mm rectangle centered on (-10, -10)
-setp probe-input-switch.tool-setter-x -10.0
-setp probe-input-switch.tool-setter-y -10.0
-setp probe-input-switch.tool-setter-size 10.0
-setp probe-input-switch.probe-number 99
+setp probe-helper.tool-setter-x -10.0
+setp probe-helper.tool-setter-y -10.0
+setp probe-helper.tool-setter-size 10.0
+setp probe-helper.probe-number 99
+setp probe-helper.probe-max-travel 1.0
 
-net probe-input-switch.probe-input <your touch probe pin> => probe-input-switch.probe-in
-net probe-input-switch.tool-setter-input <your tool setter pin> => probe-input-switch.tool-setter-in
-net probe-input-switch.probe-tool-number iocontrol.0.tool-number => probe-input-switch.tool-number
-net probe-input-switch.current-x joint.0.pos-fb => probe-input-switch.current-x
-net probe-input-switch.current-y joint.1.pos-fb => probe-input-switch.current-y
-net probe-input-switch.current-y joint.2.pos-fb => probe-input-switch.current-z
-net probe-input-switch.out probe-input-switch.out => motion.probe-input
+net probe-helper.probe-input <your touch probe pin> => probe-helper.probe-in
+net probe-helper.tool-setter-input <your tool setter pin> => probe-helper.tool-setter-in
+net probe-helper.probe-tool-number iocontrol.0.tool-number => probe-helper.tool-number
+net probe-helper.current-x joint.0.pos-fb => probe-helper.current-x
+net probe-helper.current-y joint.1.pos-fb => probe-helper.current-y
+net probe-helper.current-y joint.2.pos-fb => probe-helper.current-z
+net probe-helper.out probe-helper.out => motion.probe-input
+net probe-helper.alarm probe-helper.alarm => motion.feed-inhibit => motion.jog-inhibit
 
 """;
 
@@ -80,18 +89,12 @@ pin in float current-z "Current Z machine coordinate";
 pin in bit probe-in "Touch probe input";
 pin in bit tool-setter-in "Tool setter input";
 pin out bit out_ "The output value";
-pin out bit probe-alarm "The probe or the tool setter has exceeded maximium travel, bad things are about to happen";
+pin out bit alarm "The probe or the tool setter has exceeded maximium travel, bad things are about to happen";
 
-pin out float trigger-x;
-pin out float trigger-y;
-pin out float trigger-z;
-pin out float d;
-pin out bool probing;
-
-//variable float trigger_x;
-//variable float trigger_y;
-//variable float trigger_z;
-//variable bool probing;
+variable float trigger_x;
+variable float trigger_y;
+variable float trigger_z;
+variable bool probing;
 
 function _;
 
@@ -109,6 +112,7 @@ FUNCTION(_) {
   }
   if (!probe_in && !tool_setter_in) {
     probing = false;
+    alarm = false;
     return;
   }
   if (!probing) {
@@ -117,14 +121,13 @@ FUNCTION(_) {
     trigger_z = current_z;
     probing = true;
   } else {
-    //hal_float_t d = sqrt(
-    d = sqrt(
+    hal_float_t d = sqrt(
       (current_x - trigger_x) * (current_x - trigger_x) +
       (current_y - trigger_y) * (current_y - trigger_y) +
       (current_z - trigger_z) * (current_z - trigger_z)
     );
     if (d >= max_probing_distance) {
-      probe_alarm = true;
+      alarm = true;
     }
   }
 }
