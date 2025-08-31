@@ -117,8 +117,12 @@ FUNCTION(_) {
   float y = current_y;
   float z = current_z;
   float r = tool_setter_size * 0.5;
-  if ((x > tool_setter_x - r) && (x < tool_setter_x + r) && (y > tool_setter_y - r) && (y < tool_setter_y + r)) {
-    // we're near the tool setter, AND the inputs
+  if ((x > tool_setter_x - r)
+      && (x < tool_setter_x + r)
+      && (y > tool_setter_y - r)
+      && (y < tool_setter_y + r)
+      && (tool_number == probe_number)) {
+    // the touch probe is near the tool setter, AND the inputs
     out_ = probe_in && tool_setter_in;
   } else {
     out_ = input_active;
