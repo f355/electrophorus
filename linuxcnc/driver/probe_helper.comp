@@ -37,7 +37,8 @@ This component also provides rudimentary probe crash protection: when either of 
 the current values of probe_helper.current-<axis> are latched to memory and the subsequent motion is tracked.
 If the distance from the latched point gets greater than probe_helper.max-probing-distance, the probe_helper.probe-alarm
 pin is set to TRUE, you can connect it to motion.feed-inhibit and/or motion.jog-inhibit. When both input signals are
-set to FALSE, the latching is reset.
+set to FALSE, the latching is reset. If the alarm triggers, bring the machine to e-stop and back, that should allow you
+to jog away from the dangerous direction.
 
 CAUTION:
 1. if you accidentally put a wrong tool in the spindle instead of the touch probe, or the touch probe is not working
@@ -53,15 +54,15 @@ examples """
 loadrt probe_helper
 addf probe-helper servo-thread
 
-// 10mm rectangle centered on (-10, -10)
+# 10mm rectangle centered on (-10, -10)
 setp probe-helper.tool-setter-x -10.0
 setp probe-helper.tool-setter-y -10.0
 setp probe-helper.tool-setter-size 10.0
 setp probe-helper.probe-number 99
 setp probe-helper.probe-max-travel 1.0
 
-net probe-helper.probe-input <your touch probe pin> => probe-helper.probe-in
-net probe-helper.tool-setter-input <your tool setter pin> => probe-helper.tool-setter-in
+net probe-helper.probe-in <your touch probe pin> => probe-helper.probe-in
+net probe-helper.tool-setter-in <your tool setter pin> => probe-helper.tool-setter-in
 net probe-helper.probe-tool-number iocontrol.0.tool-number => probe-helper.tool-number
 net probe-helper.current-x joint.0.pos-fb => probe-helper.current-x
 net probe-helper.current-y joint.1.pos-fb => probe-helper.current-y
@@ -103,31 +104,40 @@ function _;
 #include "rtapi_math.h"
 
 FUNCTION(_) {
-  hal_float_t r = tool_setter_size * 0.5;
-  if ((current_x > tool_setter_x - r) && (current_x < tool_setter_x + r) &&
-      (current_y > tool_setter_y - r) && (current_y < tool_setter_y + r)) {
-    out_ = probe_in && tool_setter_in;
-  } else {
-    out_ = probe_in || tool_setter_in;
-  }
-  if (!probe_in && !tool_setter_in) {
+  bool input_active = probe_in || tool_setter_in;
+  if (!input_active) {
+    // both inputs are inactive, reset the state/outputs and bail out
     probing = false;
     alarm = false;
+    out_ = false;
     return;
   }
-  if (!probing) {
-    trigger_x = current_x;
-    trigger_y = current_y;
-    trigger_z = current_z;
-    probing = true;
+
+  float x = current_x;
+  float y = current_y;
+  float z = current_z;
+  float r = tool_setter_size * 0.5;
+  if ((x > tool_setter_x - r) && (x < tool_setter_x + r) && (y > tool_setter_y - r) && (y < tool_setter_y + r)) {
+    // we're near the tool setter, AND the inputs
+    out_ = probe_in && tool_setter_in;
   } else {
-    hal_float_t d = sqrt(
-      (current_x - trigger_x) * (current_x - trigger_x) +
-      (current_y - trigger_y) * (current_y - trigger_y) +
-      (current_z - trigger_z) * (current_z - trigger_z)
-    );
-    if (d >= max_probing_distance) {
-      alarm = true;
-    }
+    out_ = input_active;
+  }
+
+  if (!probing) {
+    // probing just started, latch the coordinates
+    probing = true;
+    trigger_x = x;
+    trigger_y = y;
+    trigger_z = z;
+    return;
+  }
+
+  if (max_probing_distance < sqrt(
+    (x - trigger_x) * (x - trigger_x) +
+    (y - trigger_y) * (y - trigger_y) +
+    (z - trigger_z) * (z - trigger_z)
+  )) {
+    alarm = true;
   }
 }
