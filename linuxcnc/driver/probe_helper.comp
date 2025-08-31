@@ -1,5 +1,5 @@
 component probe_helper "switches probe input based on the selected tool";
-description """This component is intended to help with probing routines.
+description """This component is intended to help with the probing routines.
 
 COMBINING THE INPUTS
 
@@ -40,10 +40,14 @@ pin is set to TRUE, you can connect it to motion.feed-inhibit and/or motion.jog-
 set to FALSE, the latching is reset. If the alarm triggers, bring the machine to e-stop and back, that should allow you
 to jog away from the dangerous direction.
 
+PROBE POWER
+
+If your touch probe requires its power turned on when probing (they typically do), connect probe-helper.probe-selected
+to the power pin.
+
 CAUTION:
 1. if you accidentally put a wrong tool in the spindle instead of the touch probe, or the touch probe is not working
-   properly for some reason, you WILL crash the machine! Always check that the touch probe is powered and working,
-   LinuxCNC GUIs typically have an LED in the interface that lights up when the probe is triggered.
+   properly for some reason, you WILL crash the machine!
 2. Do not try to use the touch probe within the tool setter rectangle, you WILL break the probe.
 3. The rotary axis movements are not considered in the crash protection. It is very rare to probe rotation, but if you
    do, please don't rely on this component.
@@ -68,6 +72,7 @@ net probe.helper.current-x joint.0.pos-fb => probe-helper.current-x
 net probe.helper.current-y joint.1.pos-fb => probe-helper.current-y
 net probe.helper.current-z joint.2.pos-fb => probe-helper.current-z
 net probe.helper.out probe-helper.out => motion.probe-input
+net probe.helper.out probe-helper.probe-selected => <your probe power pin>
 net probe.helper.alarm probe-helper.alarm => motion.feed-inhibit => motion.jog-inhibit
 
 """;
@@ -89,7 +94,8 @@ pin in float current-y "Current Y machine coordinate";
 pin in float current-z "Current Z machine coordinate";
 pin in bit probe-in "Touch probe input";
 pin in bit tool-setter-in "Tool setter input";
-pin out bit out_ "The output value";
+pin out bit out_ "Probe signal output value";
+pin out bit probe-selected "Touch probe is the current/active tool";
 pin out bit alarm "The probe or the tool setter has exceeded maximium travel, bad things are about to happen";
 
 variable float trigger_x;
@@ -113,15 +119,17 @@ FUNCTION(_) {
     return;
   }
 
+  probe_selected = tool_number == probe_number;
   float x = current_x;
   float y = current_y;
   float z = current_z;
   float r = tool_setter_size * 0.5;
-  if ((x > tool_setter_x - r)
+  if (probe_selected
+      && (x > tool_setter_x - r)
       && (x < tool_setter_x + r)
       && (y > tool_setter_y - r)
       && (y < tool_setter_y + r)
-      && (tool_number == probe_number)) {
+  ) {
     // the touch probe is near the tool setter, AND the inputs
     out_ = probe_in && tool_setter_in;
   } else {

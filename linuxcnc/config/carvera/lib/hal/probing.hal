@@ -14,4 +14,5 @@ net probe.helper.current-x joint.0.pos-fb => probe-helper.current-x
 net probe.helper.current-y joint.1.pos-fb => probe-helper.current-y
 net probe.helper.current-z joint.2.pos-fb => probe-helper.current-z
 net probe.helper.out probe-helper.out => motion.probe-input
+net probe.helper.probe-power probe-helper.probe-selected => carvera.output.probe-power
 net probe.helper.alarm probe-helper.alarm => motion.feed-inhibit => motion.jog-inhibit
