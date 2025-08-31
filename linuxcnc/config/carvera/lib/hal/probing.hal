@@ -7,11 +7,11 @@ setp probe-helper.tool-setter-size 15.0
 setp probe-helper.probe-number 99
 setp probe-helper.max-probing-distance 1.0
 
-net probe-helper.probe-in carvera.input.probe => probe-helper.probe-in
-net probe-helper.tool-setter-in carvera.input.tool-setter => probe-helper.tool-setter-in
-net probe-helper.probe-tool-number iocontrol.0.tool-number => probe-helper.tool-number
-net probe-helper.current-x joint.0.pos-fb => probe-helper.current-x
-net probe-helper.current-y joint.1.pos-fb => probe-helper.current-y
-net probe-helper.current-z joint.2.pos-fb => probe-helper.current-z
-net probe-helper.out probe-helper.out => motion.probe-input
-net probe-helper.alarm probe-helper.alarm => motion.feed-inhibit => motion.jog-inhibit
+net probe.helper.probe-in carvera.input.probe => probe-helper.probe-in
+net probe.helper.tool-setter-in carvera.input.tool-setter => probe-helper.tool-setter-in
+net probe.helper.probe-tool-number iocontrol.0.tool-number => probe-helper.tool-number
+net probe.helper.current-x joint.0.pos-fb => probe-helper.current-x
+net probe.helper.current-y joint.1.pos-fb => probe-helper.current-y
+net probe.helper.current-z joint.2.pos-fb => probe-helper.current-z
+net probe.helper.out probe-helper.out => motion.probe-input
+net probe.helper.alarm probe-helper.alarm => motion.feed-inhibit => motion.jog-inhibit
