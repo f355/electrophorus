@@ -59,7 +59,7 @@ setp probe-helper.tool-setter-x -10.0
 setp probe-helper.tool-setter-y -10.0
 setp probe-helper.tool-setter-size 10.0
 setp probe-helper.probe-number 99
-setp probe-helper.probe-max-travel 1.0
+setp probe-helper.max-probing-distance 1.0
 
 net probe-helper.probe-in <your touch probe pin> => probe-helper.probe-in
 net probe-helper.tool-setter-in <your tool setter pin> => probe-helper.tool-setter-in
