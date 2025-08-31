@@ -91,10 +91,18 @@ PARAMETER_FILE = qtdragon.var
 RS274NGC_STARTUP_CODE = G17 G21 G40 G43H0 G54 G64P0.0127 G80 G90 G94 G97 M5 M9
 
 # subroutine/remap path list
-SUBROUTINE_PATH = ../../../../nc_files/probe/basic_probe/macros:~/linuxcnc/nc_files/examples/ngcgui_lib:~/linuxcnc/nc_files/examples/ngcgui_lib/utilitysubs:~/linuxcnc/nc_files/examples/ngcgui_lib:~/linuxcnc/nc_files/examples/ngcgui_lib/utilitysubs:~/linuxcnc/nc_files/examples/probe/basic_probe/macros:~/linuxcnc/nc_files/examples/remap-subroutines:~/linuxcnc/nc_files/examples/ngcgui_lib/remap_lib
+SUBROUTINE_PATH = ~/linuxcnc/nc_files/examples/ngcgui_lib:~/linuxcnc/nc_files/examples/ngcgui_lib/utilitysubs:~/linuxcnc/nc_files/examples/remap-subroutines:~/linuxcnc/nc_files/examples/ngcgui_lib/remap_lib
 
 # on abort, this ngc file is called. required for basic/versa probe
 ON_ABORT_COMMAND = O <on_abort> call
+
+# this remaps m6 to do auto probing after tool change
+REMAP = M6 modalgroup=6 prolog=change_prolog ngc=qt_auto_probe_tool epilog=change_epilog
+
+
+[PYTHON]
+PATH_APPEND = ~/linuxcnc/nc_files/examples/remap_lib/python-stdglue/python
+TOPLEVEL = ~/linuxcnc/nc_files/examples/remap_lib/python-stdglue/python/toplevel.py
 
 [EMCMOT]
 EMCMOT = motmod
@@ -129,7 +137,7 @@ MDI_COMMAND = (DEBUG,<14>)
 USE_PROBE = versaprobe
 
 [TOOL_CHANGE]
-X = 0
+X = -20
 Y = 0
 Z = 0
 
@@ -141,7 +149,7 @@ Z = 0
 [VERSA_TOOLSETTER]
 X = -6
 Y = -3.50
-Z = -20
+Z = -80
 Z_MAX_CLEAR = 0
 MAXPROBE = -20
 
