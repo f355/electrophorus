@@ -1,6 +1,7 @@
 net tool-change.change hal_manualtoolchange.change <= iocontrol.0.tool-change
 net tool-change.changed. hal_manualtoolchange.changed <= iocontrol.0.tool-changed
 net tool-change.number hal_manualtoolchange.number <= iocontrol.0.tool-prep-number
+net tool-change.tool-prep-loop iocontrol.0.tool-prepare => iocontrol.0.tool-prepared
 
 # external offset spindle auto raise on pause
 net eoffset.spindle-pause qtdragon.spindle-inhibit => spindle.0.inhibit
