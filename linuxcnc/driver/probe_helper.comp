@@ -1,6 +1,5 @@
-component probe_helper "switches probe input based on the selected tool";
-description """This component is intended to help with the probing routines.
-
+component probe_helper "a collection of tools to help with probing";
+description """
 COMBINING THE INPUTS
 
 On machines equipped with both the tool setter on the bed and the spindle touch probe, combining those two inputs might
