@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
-export USERNAME=$(whoami)
-
-sudo ./linuxcnc/pi_init/01_init.sh
-sudo ./linuxcnc/pi_init/02a_headless.sh
+sudo USERNAME="$USER" ./linuxcnc/pi_init/01_init.sh
+sudo USERNAME="$USER" ./linuxcnc/pi_init/02a_headless.sh
 
 mkdir -p ~/linuxcnc/configs
 mkdir -p ~/linuxcnc/nc_files
