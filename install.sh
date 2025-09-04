@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 sudo USERNAME="$USER" ./linuxcnc/pi_init/01_init.sh
 sudo USERNAME="$USER" ./linuxcnc/pi_init/02a_headless.sh
 
@@ -12,7 +14,7 @@ ln -s /usr/share/linuxcnc/ncfiles/gladevcp_lib ~/linuxcnc/nc_files/gladevcp_lib
 ln -s /usr/share/linuxcnc/ncfiles/ngcgui_lib ~/linuxcnc/nc_files/ngcgui_lib
 ln -s /usr/share/linuxcnc/ncfiles/remap_lib ~/linuxcnc/nc_files/remap_lib
 
-ln -s $PWD/linuxcnc/carvera ~/linuxcnc/configs/carvera
+ln -s $PWD/linuxcnc/config/carvera ~/linuxcnc/configs/carvera
 
 sudo halcompile --install ./linuxcnc/driver/electrophorus.c
 sudo halcompile --install ./linuxcnc/driver/level_map.comp

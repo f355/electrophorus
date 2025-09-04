@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e
+
 apt install -y tigervnc-standalone-server novnc
 
 # allow passwordless VNC
