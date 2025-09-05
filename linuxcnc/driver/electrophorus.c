@@ -527,7 +527,11 @@ void spi_read() {
         default:
           // we have received a BAD payload from the PRU
           *state->spi_status = 0;
-          rtapi_print("Bad SPI payload = %x\n", rx_data.header);
+          rtapi_print("Bad SPI payload:");
+          for (int i = 0; i < SPI_BUF_SIZE; i++) {
+            rtapi_print(" %02x", rx_data.buffer[i]);
+          }
+          rtapi_print("\n");
       }
     }
   } else {
@@ -579,6 +583,8 @@ void spi_transfer() {
       break;
     case DRV_RP1:
       rp1spi_transfer(0, tx_data.buffer, rx_data.buffer, SPI_BUF_SIZE);
+    default:
+      rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");
   }
 }
 
