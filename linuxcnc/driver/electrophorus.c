@@ -582,7 +582,10 @@ void spi_transfer() {
       }
       break;
     case DRV_RP1:
-      rp1spi_transfer(0, tx_data.buffer, rx_data.buffer, SPI_BUF_SIZE);
+      for (int i = 0; i < SPI_BUF_SIZE; i++) {
+        rp1spi_transfer(0, tx_data.buffer + i, rx_data.buffer + i, 1);
+      }
+      break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");
   }
@@ -687,7 +690,7 @@ int rt_peripheral_init(void) {
         return -1;
       }
 
-      if (rp1spi_init(0, 0, SPI_MODE_0, 20000000) != 1)  // SPIx, CSx, mode, freq
+      if (rp1spi_init(0, 0, SPI_MODE_0, 5000000) != 1)  // SPIx, CSx, mode, freq
       {
         rtapi_print_msg(RTAPI_MSG_ERR, "rp1spi_init failed.\n");
         return -1;
