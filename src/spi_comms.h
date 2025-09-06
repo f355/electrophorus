@@ -21,6 +21,7 @@ class SpiComms {
   rxData_t temp_rx_buffer1{};
   rxData_t temp_rx_buffer2{};
   uint8_t reject_count = 0;
+  volatile bool configured = false;
   volatile bool data_ready = false;
   volatile bool spi_error = false;
 

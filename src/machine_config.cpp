@@ -8,7 +8,7 @@
 #include "modules/gpio/digital_outs.h"
 #include "modules/gpio/pulse_counter.h"
 #include "modules/pwm/pwm.h"
-#include "modules/stepgen/stepgen.h"
+#include "modules/stepper/stepper.h"
 
 // Carvera Air CA1 configuration
 
@@ -20,15 +20,15 @@ void machine_init() {
   (new Pin(1, 15))->as_output()->set(false);
 }
 
-vector<Module*> machine_base_modules(const SpiComms* comms) {
+vector<Module*> stepper_modules(const SpiComms* comms) {
   // XYZA
-  return {new Stepgen(0, new Pin(1, 28), (new Pin(1, 29))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
-          new Stepgen(1, new Pin(1, 26), new Pin(1, 27), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
-          new Stepgen(2, new Pin(1, 24), (new Pin(1, 25))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
-          new Stepgen(3, new Pin(1, 21), (new Pin(1, 23))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data)};
+  return {new Stepper(0, new Pin(1, 28), (new Pin(1, 29))->invert(), comms->rx_data, comms->tx_data),
+          new Stepper(1, new Pin(1, 26), new Pin(1, 27), comms->rx_data, comms->tx_data),
+          new Stepper(2, new Pin(1, 24), (new Pin(1, 25))->invert(), comms->rx_data, comms->tx_data),
+          new Stepper(3, new Pin(1, 21), (new Pin(1, 23))->invert(), comms->rx_data, comms->tx_data)};
 }
 
-vector<Module*> machine_servo_modules(SpiComms* comms) {
+vector<Module*> slow_modules(SpiComms* comms) {
   const inputPin_t input_pins[INPUT_PINS] = INPUT_PIN_DESC;
   const outputPin_t output_pins[OUTPUT_PINS] = OUTPUT_PIN_DESC;
 

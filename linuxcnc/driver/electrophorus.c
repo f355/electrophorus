@@ -58,7 +58,7 @@ MODULE_LICENSE("GPL v3");
 
 #define RPI5_RP1_PERI_BASE 0x7c000000
 
-#define f_period_s ((double)(l_period_ns * 1e-9))
+#define f_period_s ((double)(l_period_ns / 1e9))
 
 typedef struct {
   struct {

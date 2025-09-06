@@ -37,7 +37,7 @@ add_executable(${PROJECT_NAME}
         src/modules/gpio/digital_outs.cpp
         src/modules/gpio/pulse_counter.cpp
         src/modules/pwm/pwm.cpp
-        src/modules/stepgen/stepgen.cpp
+        src/modules/stepper/stepper.cpp
         src/pin.cpp
         src/spi_comms.cpp
 )

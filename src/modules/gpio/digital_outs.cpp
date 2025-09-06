@@ -24,7 +24,7 @@ DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], volat
   }
 }
 
-void DigitalOuts::run() {
+void DigitalOuts::run_servo() {
   const uint16_t outputs = *this->outputs ^ invert_mask;
   for (uint8_t i = 0; i < num_pins; i++) {
     if (outputs >> i & 0b1) {
