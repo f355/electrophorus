@@ -6,6 +6,8 @@
 #define BASE_FREQUENCY 120000  // 120 kHz
 #define SERVO_FREQUENCY 1000   // 1 kHz
 
+#define DDS_SCALE (1LL << 32)  // DDS accumulator scale factor (2^32)
+
 #define STEPGENS 4
 
 #define STEPGEN_NAMES {"x", "y", "z", "a"};

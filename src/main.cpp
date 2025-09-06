@@ -36,16 +36,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   // there, the "base" thread is doing hard-realtime stuff like pulsing the steppers,
   // and the "servo" thread is handling less-urgent tasks (motion planning, pin IO handling, etc.) at a lower frequency.
   printf("initializing base ticker...\n");
-  const auto base_ticker = &irq_tickers[0];
-  base_ticker->configure(BASE_FREQUENCY, 2);
-  base_ticker->modules = machine_base_modules(comms);
-  base_ticker->start();
+  auto steppers = stepper_modules(comms);
+  BaseTicker::instance().register_modules(&steppers);
+  BaseTicker::instance().start();
 
   printf("initializing servo ticker...\n");
-  const auto servo_ticker = &irq_tickers[1];
-  servo_ticker->configure(SERVO_FREQUENCY, 3);
-  servo_ticker->modules = machine_servo_modules(comms);
-  servo_ticker->start();
+  auto servo_modules = slow_modules(comms);
+  ServoTicker::instance().register_modules(&steppers);
+  ServoTicker::instance().register_modules(&servo_modules);
+  ServoTicker::instance().start();
   printf("tickers initialized.\n");
 
   // wait for tickers to read IO before moving on

@@ -30,7 +30,7 @@ DigitalIns::DigitalIns(const uint8_t num_pins, const inputPin_t pins[], volatile
   }
 }
 
-void DigitalIns::run() {
+void DigitalIns::run_servo() {
   uint16_t inputs = 0;
   for (uint8_t i = 0; i < num_pins; i++) inputs |= (this->ports[i]->FIOPIN >> this->pins[i] & 0b1) << i;
   *this->inputs = inputs ^ this->invert_mask;

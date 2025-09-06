@@ -13,7 +13,7 @@ class PulseCounter final : public Module {
  public:
   PulseCounter(int var_number, const Pin* pin, volatile txData_t* tx_data);
 
-  void run() override;
+  void run_servo() override;
 };
 
 #endif

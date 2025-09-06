@@ -6,13 +6,10 @@
 #define PRU_DATA 0x64617461   // "data" SPI payload
 #define PRU_READ 0x72656164   // "read" SPI payload
 #define PRU_WRITE 0x77726974  // "writ" SPI payload
+#define PRU_CONF 0x636F6E66   // "conf" SPI payload
 
 // SPI configuration
 #define SPI_BUF_SIZE 56  // maximum of rx/tx sizes
-
-typedef int64_t fixp_t;  // 32.32 fixed point type to somewhat distinguish it from integers
-#define FIXED_POINT 32
-#define FIXED_ONE (1LL << FIXED_POINT)
 
 #pragma pack(push, 2)
 
@@ -22,10 +19,21 @@ typedef union {
   uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    volatile fixp_t stepgen_freq_command[STEPGENS];
-    int32_t output_vars[OUTPUT_VARS];
-    uint8_t stepgen_enable_mask;
-    uint16_t outputs;
+    union {
+      struct {
+        // write payload
+        volatile float stepgen_freq_command[STEPGENS];  // position commands for steppers in machine units (mu)
+        int32_t output_vars[OUTPUT_VARS];               // output variables (PWM duty etc.)
+        uint8_t stepgen_enable_mask;                    // bitmask for enabled steppers
+        uint16_t outputs;                               // output GPIO pin states, bitmask
+      };
+      struct {
+        // config payload
+        float stepper_init_position[STEPGENS];   // initial stepper position in machine units
+        float stepper_max_accel[STEPGENS];       // maximum stepper acceleration in mu/s/s
+        float stepper_position_scale[STEPGENS];  // number of steps per mu
+      };
+    };
   };
 } linuxCncData_t;
 
@@ -35,9 +43,9 @@ typedef union {
   uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    fixp_t stepgen_feedback[STEPGENS];
-    int32_t input_vars[INPUT_VARS];
-    uint16_t inputs;
+    float stepgen_feedback[STEPGENS];  // position feedback in mu
+    int32_t input_vars[INPUT_VARS];    // input variables (ADC values etc.)
+    uint16_t inputs;                   // input GPIO pin states, bitmask
   };
 } pruData_t;
 

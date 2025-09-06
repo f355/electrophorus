@@ -7,7 +7,7 @@
 
 #define MAX_SPI_DELAY 5  // maximum number of (roughly) milliseconds without communication from LinuxCNC
 
-enum State { ST_IDLE = 0, ST_RUNNING, ST_RESET };
+enum State { ST_WAIT_CONF = 0, ST_RUNNING, ST_RESET };
 
 SpiComms::SpiComms()
     : rx_dma1(new MODDMA_Config()),
@@ -78,7 +78,7 @@ SpiComms::SpiComms()
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2m);
 
-  NVIC_SetPriority(DMA_IRQn, 1);
+  NVIC_SetPriority(DMA_IRQn, 4);
 
   this->tx_data->header = PRU_DATA;
 
@@ -119,6 +119,7 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
+  configured = false;
   data_ready = false;
   spi_error = false;
 
@@ -130,10 +131,13 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
       dma.Disable(other_memcpy);
       break;
 
+    case PRU_CONF:
+      this->configured = true;
+      // intentional fall-through
     case PRU_WRITE:
       data_ready = true;
       reject_count = 0;
-      // don't copy the rx_data if e-stop button is pressed
+      // don't copy the rx_data if the e-stop button is pressed
       if (!this->e_stop_active) dma.Prepare(memcpy);
       break;
 
@@ -153,7 +157,7 @@ void SpiComms::err_callback() { error("DMA error on channel %d!\n", dma.irqProce
 
 void SpiComms::loop() {
   uint8_t spi_delay = 0;
-  State current_state = ST_IDLE;
+  State current_state = ST_WAIT_CONF;
   State prev_state = ST_RESET;
   bool prev_e_stop_active = this->e_stop_active;
 
@@ -175,13 +179,13 @@ void SpiComms::loop() {
     }
 
     switch (current_state) {
-      case ST_IDLE:
+      case ST_WAIT_CONF:
         if (current_state != prev_state) {
-          printf("waiting for LinuxCNC...\n");
+          printf("waiting for config from LinuxCNC...\n");
         }
         prev_state = current_state;
 
-        if (this->data_ready) {
+        if (this->configured) {
           current_state = ST_RUNNING;
         }
         break;
@@ -211,6 +215,8 @@ void SpiComms::loop() {
         }
         prev_state = current_state;
 
+        configured = false;
+
         // set the whole rxData buffer to 0
         // rxData.rxBuffer is volatile so need to do this the long way. memset cannot be used for volatile
         {
@@ -219,7 +225,7 @@ void SpiComms::loop() {
             this->rx_data->buffer[n] = 0;
           }
         }
-        current_state = ST_IDLE;
+        current_state = ST_WAIT_CONF;
     }
 
     wait_us(1000);
