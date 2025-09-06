@@ -12,6 +12,8 @@ class Pin {
  public:
   Pin(unsigned char port, unsigned char pin);
 
+  bool inverting;
+
   Pin* as_output() {
     this->port->FIODIR |= 1 << this->pin;
     return this;
@@ -39,7 +41,6 @@ class Pin {
   [[nodiscard]] PinName to_pin_name() const;
 
  private:
-  bool inverting;
   LPC_GPIO_TypeDef* port;
 
   uint8_t pin;

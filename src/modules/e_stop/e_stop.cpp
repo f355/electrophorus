@@ -1,6 +1,6 @@
 #include "e_stop.h"
 
-EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms) {
+EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms), inverting(pin->inverting) {
   NVIC_SetPriority(EINT3_IRQn, 16);
   const auto irqPin = new InterruptIn(pin->to_pin_name());
   irqPin->rise(callback(this, &EStop::rise_handler));
@@ -8,6 +8,23 @@ EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms) {
 }
 
 void EStop::rise_handler() const {
+  if (this->inverting) {
+    this->disengaged();
+  } else {
+    this->engaged();
+  }
+}
+
+void EStop::fall_handler() const {
+  if (this->inverting) {
+    this->engaged();
+  } else {
+    this->disengaged();
+  }
+}
+
+// ReSharper disable once CppDFAUnreachableFunctionCall
+void EStop::engaged() const {
   this->comms->e_stop_active = true;
   // kill the steppers
   this->comms->rx_data->stepgen_enable_mask = 0;
@@ -15,4 +32,5 @@ void EStop::rise_handler() const {
   this->comms->rx_data->output_vars[0] = 0;
 }
 
-void EStop::fall_handler() const { this->comms->e_stop_active = false; }
+// ReSharper disable once CppDFAUnreachableFunctionCall
+void EStop::disengaged() const { this->comms->e_stop_active = false; }
