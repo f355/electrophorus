@@ -18,11 +18,10 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-#include "SDBlockDevice.h"
 #include "irq_ticker.h"
 #include "machine_config.h"
 #include "mbed.h"
-#include "msd/USBMSD.h"
+#include "serial_comms.h"
 #include "spi_comms.h"
 
 [[noreturn]] int main() {
@@ -30,16 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
   machine_init();
 
-  if (main_button_pin()->get()) {
-    printf("main button pressed, entering firmware upgrade mode\n");
-
-    SDBlockDevice sd(P0_18, P0_17, P0_15, P0_16);
-    USBMSD usb(&sd);
-
-    while (true) {
-      usb.process();
-    }
-  }
+  new SerialComms();
 
   printf("initializing SPI...\n");
   const auto comms = new SpiComms();

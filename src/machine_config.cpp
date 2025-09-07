@@ -12,8 +12,6 @@
 
 // Carvera Air CA1 configuration
 
-Pin* main_button_pin() { return (new Pin(2, 13))->as_input()->invert(); }
-
 void machine_init() {
   // the beeper is obnoxious, shut it up first thing
   (new Pin(1, 14))->as_output()->set(false);

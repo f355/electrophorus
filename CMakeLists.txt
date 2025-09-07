@@ -40,6 +40,8 @@ add_executable(${PROJECT_NAME}
         src/modules/stepgen/stepgen.cpp
         src/pin.cpp
         src/spi_comms.cpp
+        src/serial_comms.cpp
+        src/serial_comms.h
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)
