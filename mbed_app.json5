@@ -1,4 +1,11 @@
 {
+  "requires": [
+    "drivers-usb",
+    "platform",
+    "drivers",
+    "events",
+    "sd",
+  ],
   "target_overrides": {
     "LPC1768": {
       "target.application-profile": "bare-metal",

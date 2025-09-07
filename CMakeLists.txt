@@ -44,6 +44,6 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)
 
-target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
+target_link_libraries(${PROJECT_NAME} mbed-baremetal mbed-usb mbed-usb-msd mbed-storage-sd moddma)
 
 mbed_set_post_build(${PROJECT_NAME})
