@@ -31,7 +31,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   machine_init();
 
   if (main_button_pin()->get()) {
-    printf("main button pressed, entering firmware upgrade mode");
+    printf("main button pressed, entering firmware upgrade mode\n");
 
     SDBlockDevice sd(P0_18, P0_17, P0_15, P0_16);
     USBMSD usb(&sd);

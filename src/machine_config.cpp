@@ -12,11 +12,7 @@
 
 // Carvera Air CA1 configuration
 
-Pin* main_button_pin() {
-  const auto pin = (new Pin(2, 13))->as_input()->invert();
-  printf("main button pin created");
-  return pin;
-}
+Pin* main_button_pin() { return (new Pin(2, 13))->as_input()->invert(); }
 
 void machine_init() {
   // the beeper is obnoxious, shut it up first thing
