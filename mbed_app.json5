@@ -5,10 +5,11 @@
     "drivers",
     "events",
     "sd",
+    "rtos",
   ],
   "target_overrides": {
     "LPC1768": {
-      "target.application-profile": "bare-metal",
+      // "target.application-profile": "bare-metal",
       "target.memory_bank_config": {
         "IROM1": {
           // the first 16kB of ROM are taken by the bootloader code,
