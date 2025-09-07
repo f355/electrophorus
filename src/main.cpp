@@ -28,6 +28,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 [[noreturn]] int main() {
   printf("\nelectrophorus booting up...\n");
 
+  machine_init();
+
   if (main_button_pin()->get()) {
     printf("main button pressed, entering firmware upgrade mode");
 
@@ -38,8 +40,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
       usb.process();
     }
   }
-
-  machine_init();
 
   printf("initializing SPI...\n");
   const auto comms = new SpiComms();
