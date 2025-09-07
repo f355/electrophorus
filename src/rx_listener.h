@@ -15,7 +15,7 @@ class RxListener final {
 
   static RxListener* instance();
 
-  static void handle_interrupt();
+  static void run();
 
   void register_modules(const std::vector<Module*>& ms);
 };

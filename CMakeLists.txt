@@ -13,6 +13,13 @@ project(electrophorus
         # VERSION 1.0.0
         LANGUAGES C CXX ASM)
 
+# Debug option: disable hardware output manipulation in firmware builds
+option(EPHO_NO_HW_IO "Disable hardware output manipulation (DigitalOuts, PWM, pin writes)" OFF)
+
+# Select which LPC1768 UART the firmware uses for comms with LinuxCNC: 0 (/dev/ttyAMA0) or 2 (/dev/ttyUSB0)
+set(EPHO_COMMS_UART 0 CACHE STRING "LPC1768 UART to use for comms: 0 (PL011 on Pi) or 2 (FT232R)")
+set_property(CACHE EPHO_COMMS_UART PROPERTY STRINGS 0 2)
+
 include(mbed_project_setup)
 
 if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
@@ -27,7 +34,6 @@ add_subdirectory(mbed-os)
 add_subdirectory(lib/MODDMA)
 
 add_executable(${PROJECT_NAME}
-        src/irq_ticker.cpp
         src/machine_config.cpp
         src/main.cpp
         src/module.cpp
@@ -40,10 +46,23 @@ add_executable(${PROJECT_NAME}
         src/modules/stepgen/stepgen.cpp
         src/pin.cpp
         src/rx_listener.cpp
-        src/spi_comms.cpp
+        src/serial_comms.cpp
+        src/console_override.cpp
+        src/stepgen_ticker.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)
+if (EPHO_NO_HW_IO)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE EPHO_NO_HW_IO)
+endif ()
+
+# Propagate UART selection to firmware
+if (NOT EPHO_COMMS_UART MATCHES "^(0|2)$")
+    message(FATAL_ERROR "EPHO_COMMS_UART must be 0 or 2, got '${EPHO_COMMS_UART}'")
+endif ()
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE EPHO_COMMS_UART=${EPHO_COMMS_UART})
+
 
 target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
 

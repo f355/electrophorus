@@ -3,8 +3,7 @@
 
 #include "LPC17xx.h"
 #include "mbed.h"
-
-#define NUM_PORTS 5
+static constexpr int NUM_PORTS = 5;
 
 extern LPC_GPIO_TypeDef* gpio_ports[NUM_PORTS];
 
@@ -13,7 +12,9 @@ class Pin {
   Pin(unsigned char port, unsigned char pin);
 
   Pin* as_output() {
+#ifndef EPHO_NO_HW_IO
     this->port->FIODIR |= 1 << this->pin;
+#endif
     return this;
   }
 
@@ -32,10 +33,14 @@ class Pin {
   [[nodiscard]] bool get() const { return this->inverting ^ ((this->port->FIOPIN >> this->pin) & 1); }
 
   void set(const bool value) const {
+#ifndef EPHO_NO_HW_IO
     if (this->inverting ^ value)
       this->port->FIOSET = 1 << this->pin;
     else
       this->port->FIOCLR = 1 << this->pin;
+#else
+    (void)value;  // no-op in debug no-IO mode
+#endif
   }
 
   [[nodiscard]] PinName to_pin_name() const;

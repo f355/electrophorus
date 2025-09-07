@@ -1,18 +1,18 @@
 #include "stepgen.h"
 
 Stepgen::Stepgen(const int stepper_number, Pin* step_pin, Pin* dir_pin, const uint32_t ticker_frequency,
-                 volatile rxData_t* rx_data, volatile txData_t* tx_data)
-    : stepper_enable_mask(1 << stepper_number),
-      commanded_frequency(&rx_data->stepgen_freq_command[stepper_number]),
-      step_position(&tx_data->stepgen_feedback[stepper_number]),
-      stepper_enable(&rx_data->stepgen_enable_mask),
+                 const SerialComms* comms)
+    : comms(comms),
+      stepper_number(stepper_number),
+      stepper_enable_mask(1 << stepper_number),
       ticker_frequency(ticker_frequency),
+      step_position(0),
       step_pin(step_pin->as_output()),
       dir_pin(dir_pin->as_output()) {
   this->dir_pin->set(this->current_dir);
 }
 
-void Stepgen::run_base() {
+void Stepgen::make_steps() {
   if (this->is_stepping) {
     // bring down the step pin that was set high on the previous tick
     this->step_pin->set(false);
@@ -26,7 +26,7 @@ void Stepgen::run_base() {
     return;
   }
 
-  if ((*this->stepper_enable & this->stepper_enable_mask) == 0) {
+  if ((this->comms->get_linuxcnc_state()->stepgen_enable_mask & this->stepper_enable_mask) == 0) {
     return;  // stepper is disabled, nothing to do
   }
 
@@ -39,26 +39,26 @@ void Stepgen::run_base() {
 
   if (this->increment == 0) return;
 
-  int64_t position = *this->step_position;
-  const int64_t old_position = position;
-  position += increment;
+  const int64_t old_position = this->step_position;
+  this->step_position += increment;
 
-  if ((old_position ^ position) & FIXED_ONE) {
+  if ((old_position ^ this->step_position) & FIXED_ONE) {
     // the next whole step value is reached, make a step
     this->step_pin->set(true);
     this->is_stepping = true;
   }
-  *this->step_position = position;
+  this->comms->get_pru_state()->stepgen_feedback[stepper_number] = this->step_position;
 }
 
 void Stepgen::on_rx() {
-  if ((*this->stepper_enable & this->stepper_enable_mask) == 0 ||
-      (this->last_commanded_frequency == *this->commanded_frequency)) {
-    return;  // stepper is disabled or the command hasn't changed, nothing to do
-  }
+  const auto* l = this->comms->get_linuxcnc_state();
+  if ((l->stepgen_enable_mask & this->stepper_enable_mask) == 0) return;  // disabled
+
+  const float cmd = l->stepgen_freq_command[this->stepper_number];
+  if (this->last_commanded_frequency == cmd) return;  // no change
 
   // the commanded frequency has changed, recalculate the increment
-  this->last_commanded_frequency = *this->commanded_frequency;
+  this->last_commanded_frequency = cmd;
   this->increment =
       static_cast<int64_t>(this->last_commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
 
@@ -72,4 +72,4 @@ void Stepgen::on_rx() {
 
 bool Stepgen::listens_to_rx() { return true; }
 
-bool Stepgen::is_base() { return true; }
+bool Stepgen::is_stepgen() { return true; }

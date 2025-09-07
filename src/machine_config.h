@@ -2,10 +2,10 @@
 #define MACHINECONFIG_H
 
 #include "module.h"
-#include "spi_comms.h"
+#include "serial_comms.h"
 
 void machine_init();
 
-vector<Module*> machine_modules(SpiComms* comms);
+vector<Module*> machine_modules(SerialComms* comms);
 
 #endif

@@ -1,17 +1,28 @@
 loadrt [KINS]KINEMATICS
 loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
 
-loadrt electrophorus
+loadrt electrophorus device=/dev/ttyAMA0
 loadrt estop_latch names=estop-latch
+loadrt and2 count=2
 
-addf carvera.read servo-thread
+addf carvera.uart-read servo-thread
 addf motion-command-handler servo-thread
 addf motion-controller servo-thread
+addf and2.0 servo-thread
+addf and2.1 servo-thread
 addf estop-latch servo-thread
 
-######## estop, SPI comms, machine power
-net estop.user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-12v => carvera.output.power-24v
-net estop.user-request-enable iocontrol.0.user-request-enable => carvera.spi-reset => estop-latch.reset
+
+# E-Stop, comms, and machine power
+
+# E-Stop latch: ok-in from user-enable-out; fault from physical E-Stop; ok-out -> comms-enable and emc-enable-in
+net estop.estop-ok estop-latch.ok-out => carvera.comms-enable => iocontrol.0.emc-enable-in
+net estop.user-request-enable iocontrol.0.user-request-enable => carvera.comms-reset => estop-latch.reset
 net estop.fault-in carvera.input.e-stop => estop-latch.fault-in
-net estop.carvera-status carvera.spi-status => estop-latch.ok-in
-net estop.status estop-latch.ok-out => iocontrol.0.emc-enable-in => carvera.output.work-light
+
+# Machine power gating: user request AND UART ready AND comms OK
+net estop.user-enable-out iocontrol.0.user-enable-out => and2.0.in0 => estop-latch.ok-in
+net estop.uart-open carvera.comms-ready => and2.0.in1
+net estop.and0.out and2.0.out => and2.1.in0
+net estop.comms-ok carvera.comms-status => and2.1.in1
+net estop.machine-on and2.1.out => carvera.output.power-12v => carvera.output.power-24v

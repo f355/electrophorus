@@ -1,6 +1,10 @@
 #ifndef MACHINEDEF_TYPES_H
 #define MACHINEDEF_TYPES_H
 
+#include <stdint.h>
+#include <stdbool.h>
+
+
 typedef struct {
   const char *name;
   uint8_t port;

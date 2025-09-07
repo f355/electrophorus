@@ -1,19 +1,20 @@
 #include "adc.h"
 
-ADC::ADC(const int var_number, Pin* pin, volatile txData_t* tx_data)
-    : variable(&tx_data->input_vars[var_number]),
+ADC::ADC(const int var_number, Pin* pin, const SerialComms* comms)
+    : comms(comms),
+      var_number(var_number),
       adc(new AnalogIn(pin->as_input()->to_pin_name())),
-      run_every(100),  // run every 100 timer ticks (0.1 seconds)
+      run_every(99),   // keep this number odd
       counter(1) {
-  // Take a reading to get the ADC up and running before moving on
-  this->ADC::run_servo();
+  // Take an initial reading to warm up ADC and publish a value
+  this->comms->get_pru_state()->input_vars[var_number] = this->adc->read_u16();
 }
 
-void ADC::run_servo() {
+void ADC::on_rx() {
   if (--this->counter == 0) {
     this->counter = run_every;
-    *this->variable = this->adc->read_u16();
+    this->comms->get_pru_state()->input_vars[var_number] = this->adc->read_u16();
   }
 }
 
-bool ADC::is_servo() { return true; }
+bool ADC::listens_to_rx() { return true; }

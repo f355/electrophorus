@@ -2,10 +2,10 @@
 #define DIGITALOUTPUTS_H
 
 #include "module.h"
-#include "spi_comms.h"
+#include "serial_comms.h"
 
 class DigitalOuts final : public Module {
-  volatile uint16_t* outputs;
+  const SerialComms* comms;
 
   uint8_t num_pins;
   LPC_GPIO_TypeDef** ports;
@@ -13,7 +13,7 @@ class DigitalOuts final : public Module {
   uint16_t invert_mask;
 
  public:
-  DigitalOuts(uint8_t num_pins, const outputPin_t pins[], volatile rxData_t* rx_data);
+  DigitalOuts(uint8_t num_pins, const outputPin_t pins[], const SerialComms* comms);
 
   bool listens_to_rx() override;
   void on_rx() override;

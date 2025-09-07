@@ -3,14 +3,12 @@
 
 #include "machinedef_types.h"
 
-#define BASE_FREQUENCY 120000  // 120 kHz
-#define SERVO_FREQUENCY 1000   // 1 kHz
+#define STEPGEN_FREQUENCY 120000  // 120 kHz
 
-#define DMA_PRIORITY 1
-#define BASE_TICKER_PRIORITY 2
+#define COMMS_DMA_PRIORITY 0
+#define STEPGEN_TICKER_PRIORITY 1
+#define PIN_IRQ_PRIORITY 2
 #define RX_LISTENER_PRIORITY 3
-#define SERVO_TICKER_PRIORITY 4
-#define PIN_IRQ_PRIORITY 5
 
 #define STEPGENS 4
 
