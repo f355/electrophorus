@@ -3,18 +3,21 @@
 
 #include "module.h"
 #include "pin.h"
-#include "spi_comms.h"
+#include "serial_comms.h"
 
 class PulseCounter final : public Module {
-  volatile int32_t* variable;
+  SerialComms* comms;
+  int var_number;
+
   volatile int32_t counter = 0;
+
   void interrupt_handler();
 
  public:
-  PulseCounter(int var_number, const Pin* pin, volatile txData_t* tx_data);
+  PulseCounter(int var_number, const Pin* pin, SerialComms* comms);
 
-  bool is_servo() override;
-  void run_servo() override;
+  bool listens_to_rx() override;
+  void on_rx() override;
 };
 
 #endif

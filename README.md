@@ -23,119 +23,90 @@ authors [say they "dont ...not support"](https://github.com/scottalford75/Remora
 LPC1768-based boards, so this is a hard-fork, the changes are not intended to be upstreamed, and the code has been
 pretty much rewritten.
 
-## Making it work (Carvera Air)
+## Wiring (Carvera Air)
 
-The communication between the machine's board and the Raspberry Pi is done over the SPI bus. Unfortunately, both SSP/SPI
-interfaces on the board are populated - SSP0 by the SD card and SSP1 by the ESP8266-based Wi-Fi module. We won't need
-either of those things, so we'll be plugging into the MicroSD port directly using a very cursed-looking cable. It is
-possible to use the WiFi module pins too, but it is much harder since it requires physically modifying the board.
+#### USB
 
-You'll need the following:
-
-1. Carvera Air itself, obviously.
-2. Raspberry Pi 4B (5 might work too, but I don't have one) with a suitable power supply and a MicroSD card.
-3. Female Dupont 2.54mm / 0.1"-pitch pin header connector(-s) compatible with the Raspberry Pi. A single 40-pin
-   connector is highly recommended.
-4. MicroSD breakout board - a PCB with a MicroSD card shape on one end and solder points/terminals on the other. I used
-   one end of a MicroSD extension cable, they're readily available on the internet. Alternatively, you can design such a
-   PCB and cut it on the Carvera itself (please share your design if you do).
-5. (Recommended) 5-pin female Dupont pin header connector for the SWD port (again, 2.54mm / 0.1" pitch).
-6. (Optional) 4-pin female JST XH connector for the UART port. You should have one left over from wiring up
-   the [3D probe](https://www.instructables.com/Carvera-Touch-Probe-Modifications/). :)
-7. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heatshrink,
-   etc.)
-
-### Making the cables
-
-* The Raspberry Pi pins are numbered according to
-  the [official pinout](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#gpio). The pin numbers
-  refer to the physical connector pins, not the logical GPIO numbers.
-* "Wire color" column is purely informational and refers to the colors on the photos below, feel free to use any colors
-  you want.
-* Keep the wires reasonably short - 10-15 cm is a good length. We're running stuff at pretty low speeds, so no need for
-  shielded cables or anything like that, but meters of wire is not a good idea either.
-* Double and triple check when done.
-
-#### Connector J13 - SPI
-
-It's the MicroSD port. Required - it's the main communication channel between the machine and LinuxCNC.
-
-Pins are numbered according to the [MicroSD pinout](https://en.wikipedia.org/wiki/SD_card#Transfer_modes) in SPI mode.
-Your breakout board might have extra grounds or even a completely different pinout on the cable side, make sure to
-carefully check which pin is which. On the photos below, the black ground wire is in the "wrong" place because my board
-had extra grounds, and it was more convenient to connect it there.
-
-| J13 Pin# | Signal         | RPi pin# | Wire color    |
-|----------|----------------|----------|---------------|
-| 1        | NC             | NC       | Not connected |
-| 2        | nCS / SPI CS   | 24       | Yellow        |
-| 3        | DI / SPI MOSI  | 19       | White         |
-| 4        | 3V3            | NC       | Not connected |
-| 5        | CLK / SPI SCLK | 23       | Green         |
-| 6        | GND            | 25       | Black         |
-| 7        | DO / SPI MISO  | 21       | Orange        |
-| 8        | NC             | NC       | Not connected |
-
-#### Connector J12 - SWD/Reset
-
-It's a 5-pin Dupont pin header below and to the right of the MCU, next to J3, used for flashing, resetting and debugging
-the firmware. You can omit it and flash the firmware using an SD card, but it is much more convenient to do it without
-unplugging the cable.
-
-Pins are numbered bottom-to-top, according to the silkscreen.
-
-| J12 Pin# | Signal | RPi pin# | RPi GPIO# | Wire color    |
-|----------|--------|----------|-----------|---------------|
-| 1        | 3V3    | NC       | N/A       | Not connected |
-| 2        | SWDIO  | 22       | 25        | Blue          |
-| 3        | GND    | 20       | N/A       | Black         |
-| 4        | SWDCLK | 18       | 24        | Yellow        |
-| 5        | RESET  | 16       | 23        | Orange        |
+Just connect the Raspberry Pi to the Carvera Air using a USB-C-to-USB-A cable. It is enough if you're not planning to do
+any development/debugging and just want to use the machine.
 
 #### Connector J3 - UART
 
-It's a 4-pin JST-XH connector right below the MCU, where the unused CAM cable was plugged in, used to see the firmware
-console output, mostly for debugging/informational purposes. You can omit this part if you want.
+Totally optional and not needed for normal operation. Used to see the firmware console output, mostly for
+debugging/informational purposes.
+
+It's a 4-pin JST-XH connector right below the MCU, where the unused CAM cable is plugged in.
 
 Pins are numbered top-to-bottom, according to the silkscreen.
 
 **NOTE: the board RX should be connected to the RPi TX and vice versa!**
 
-| J3 Pin# | Signal | RPi pin# | Wire color    |
-|---------|--------|----------|---------------|
-| 1       | GND    | 6        | Black         |
-| 2       | 3V3    | NC       | Not connected |
-| 3       | RX/TX  | 10       | Green         |
-| 4       | TX/RX  | 8        | Green         |
+| J3 Pin# | Signal | RPi pin# |
+|---------|--------|----------|
+| 1       | GND    | 6        |
+| 2       | 3V3    | NC       |
+| 3       | RX/TX  | 10       |
+| 4       | TX/RX  | 8        |
 
-#### Result
+#### Connector J12 - SWD/Reset
 
-The resulting cable should look something like this:
+Totally optional and not needed for normal operation, but very convenient for development, it can be used for
+flashing, resetting and debugging the firmware.
 
-![cable](img/cable.jpeg)
+It's a 5-pin Dupont pin header below and to the right of the MCU.
 
-All connected together:
+Pins are numbered bottom-to-top, according to the silkscreen.
 
-![connected](img/connected.jpeg)
-
-Please excuse the crudity of the model, I didn't have time to build it to scale or to paint it. Coming up with a way to
-permanently mount the Raspberry Pi while providing adequate cooling is left as an exercise to the reader.
+| J12 Pin# | Signal | RPi pin# | RPi GPIO# |
+|----------|--------|----------|-----------|
+| 1        | 3V3    | NC       | N/A       |
+| 2        | SWDIO  | 22       | 25        |
+| 3        | GND    | 20       | N/A       |
+| 4        | SWDCLK | 18       | 24        |
+| 5        | RESET  | 16       | 23        |
 
 ### Building the firmware
 
 Follow the [official Mbed CE instructions](https://mbed-ce.dev/getting-started/toolchain-install/). Use this repo
 instead of the `mbed-ce-hello-world`, `Release` build type and `LPC1768` target.
 
-If you're doing this on the Raspberry Pi itself, and it is connected to the machine, you can flash the firmware with
+If you're doing this on the Raspberry Pi itself, and the SWD port is wired up, you can flash the firmware with
 `sudo ninja flash-electrophorus`.
 
-Instead of flashing the firmware through SWD - e.g. if you've chosen to not connect that port - you can rename
-`build/electrophorus.bin` to `firmware.bin` and put it in the root folder of the SD card as usual. The firmware is
-(obviously) not using the SD card at all, so you can leave the rest of the files on it.
+Instead of flashing the firmware through SWD, you can rename `build/electrophorus.bin` to `firmware.bin` and put it in
+the root folder of the SD card as usual. The firmware is not using the SD card at all, so you can leave the rest of the
+files on it.
 
-We're not touching the bootloader, so to go back to the [stock](https://github.com/MakeraInc/CarveraFirmware/releases)
-or [community](https://github.com/Carvera-Community/Carvera_Community_Firmware/releases) firmware you just need to
-download it, rename it to `firmware.bin` and put it on the SD card.
+On the first flash, you can also use Carvera Controller to flash the firmware as usual, just upload
+`build/electrophorus.bin`.
+
+To go back to the [stock](https://github.com/MakeraInc/CarveraFirmware/releases)
+or [community](https://github.com/Carvera-Community/Carvera_Community_Firmware/releases) firmware you need to download
+it, rename it to `firmware.bin` and put it on the SD card. There's currently no mechanism to do this without
+removing the SD card.
+
+### Configuring Raspberry Pi
+
+1. Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to prepare the SD card as usual (Lite variant is
+   recommended and the only one tested so far). Boot the Raspberry Pi from the SD card and connect to the network.
+2. From the terminal application or an SSH session:
+
+```shell
+# fetch package repository index
+sudo apt update
+
+# install git and clone the repository
+sudo apt install git
+git clone https://github.com/f355/electrophorus.git
+cd electrophorus
+
+# install dependencies and configure things - this will take several minutes to complete.
+# If it asks questions, say yes, even if it looks somewhat scary.
+./install.sh
+
+# reboot the Raspberry Pi for the changes to take effect
+sudo reboot
+```
 
 ### Configuring LinuxCNC
 

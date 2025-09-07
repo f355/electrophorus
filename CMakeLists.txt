@@ -13,6 +13,9 @@ project(electrophorus
         # VERSION 1.0.0
         LANGUAGES C CXX ASM)
 
+# Debug option: disable hardware output manipulation in firmware builds
+option(EPHO_NO_HW_IO "Disable hardware output manipulation (DigitalOuts, PWM, pin writes)" OFF)
+
 include(mbed_project_setup)
 
 if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
@@ -27,7 +30,6 @@ add_subdirectory(mbed-os)
 add_subdirectory(lib/MODDMA)
 
 add_executable(${PROJECT_NAME}
-        src/irq_ticker.cpp
         src/machine_config.cpp
         src/main.cpp
         src/module.cpp
@@ -40,10 +42,15 @@ add_executable(${PROJECT_NAME}
         src/modules/stepgen/stepgen.cpp
         src/pin.cpp
         src/rx_listener.cpp
-        src/spi_comms.cpp
+        src/serial_comms.cpp
+        src/stepgen_ticker.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)
+if (EPHO_NO_HW_IO)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE EPHO_NO_HW_IO)
+endif ()
+
 
 target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
 

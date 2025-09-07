@@ -3,10 +3,10 @@
 
 #include "module.h"
 #include "pin.h"
-#include "spi_comms.h"
+#include "serial_comms.h"
 
 class EStop final : public Module {
-  SpiComms* comms;
+  SerialComms* comms;
 
   bool normally_closed = false;
 
@@ -16,7 +16,7 @@ class EStop final : public Module {
   void disengaged() const;
 
  public:
-  EStop(const Pin* pin, SpiComms* comms);
+  EStop(const Pin* pin, SerialComms* comms);
 };
 
 #endif

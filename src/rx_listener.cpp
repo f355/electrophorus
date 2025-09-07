@@ -6,7 +6,7 @@
 RxListener::RxListener() = default;
 
 void RxListener::start() {
-  NVIC_SetVector(PendSV_IRQn, reinterpret_cast<uint32_t>(&RxListener::handle_interrupt));
+  NVIC_SetVector(PendSV_IRQn, reinterpret_cast<uint32_t>(&RxListener::run));
   NVIC_SetPriority(PendSV_IRQn, RX_LISTENER_PRIORITY);
   NVIC_EnableIRQ(PendSV_IRQn);
 }
@@ -16,7 +16,7 @@ RxListener* RxListener::instance() {
   return &instance;
 }
 
-void RxListener::handle_interrupt() {
+void RxListener::run() {
   for (const auto m : instance()->modules) m->on_rx();
 }
 
