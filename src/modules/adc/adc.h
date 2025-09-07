@@ -3,20 +3,21 @@
 
 #include "module.h"
 #include "pin.h"
-#include "spi_comms.h"
+#include "serial_comms.h"
 
 class ADC final : public Module {
-  volatile int32_t* variable;  // pointer where to put the feedback
+  const SerialComms* comms;
+  int var_number;
   AnalogIn* adc;
 
   uint32_t run_every;
   uint32_t counter;
 
  public:
-  ADC(int var_number, Pin* pin, volatile txData_t* tx_data);
+  ADC(int var_number, Pin* pin, const SerialComms* comms);
 
-  bool is_servo() override;
-  void run_servo() override;
+  bool listens_to_rx() override;
+  void on_rx() override;
 };
 
 #endif

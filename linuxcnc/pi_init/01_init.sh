@@ -52,3 +52,10 @@ EOF
 
 # linuxcnc 2.9.4 is checking /sys/kernel/realtime, RPi kernel doesn't have that, so we need to use force
 echo "export LINUXCNC_FORCE_REALTIME=1" >/etc/profile.d/linuxcnc-force-realtime.sh
+
+
+# set FT232R latency_timer to 1ms via udev (for low-latency LinuxCNC comms)
+cat >/etc/udev/rules.d/99-ftdi-latency.rules <<'EOF'
+# FTDI FT232R: vendor 0x0403, product 0x6001
+ACTION=="add", SUBSYSTEM=="usb-serial", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTR{latency_timer}="1"
+EOF

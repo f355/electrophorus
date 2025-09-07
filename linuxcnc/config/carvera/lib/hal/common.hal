@@ -4,14 +4,14 @@ loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EM
 loadrt electrophorus
 loadrt estop_latch names=estop-latch
 
-addf carvera.read servo-thread
+addf carvera.uart-xfer servo-thread
 addf motion-command-handler servo-thread
 addf motion-controller servo-thread
 addf estop-latch servo-thread
 
-######## estop, SPI comms, machine power
-net estop.user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-12v => carvera.output.power-24v
-net estop.user-request-enable iocontrol.0.user-request-enable => carvera.spi-reset => estop-latch.reset
+######## estop, comms, machine power
+net estop.user-enable-out iocontrol.0.user-enable-out => carvera.comms-enable => carvera.output.power-12v => carvera.output.power-24v
+net estop.user-request-enable iocontrol.0.user-request-enable => carvera.comms-reset => estop-latch.reset
 net estop.fault-in carvera.input.e-stop => estop-latch.fault-in
-net estop.carvera-status carvera.spi-status => estop-latch.ok-in
+net estop.carvera-status carvera.comms-status => estop-latch.ok-in
 net estop.status estop-latch.ok-out => iocontrol.0.emc-enable-in => carvera.output.work-light
