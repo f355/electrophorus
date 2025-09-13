@@ -64,13 +64,9 @@ typedef struct {
   struct {
     struct {
       hal_float_t *position_cmd;  // in: position command (position units)
-      hal_float_t *velocity_cmd;  // in: velocity command
       hal_s32_t *counts;          // out: position feedback (raw counts)
       hal_float_t *position_fb;   // out: position feedback (position units)
-      hal_float_t *velocity_fb;   // out: velocity feedback
       hal_bit_t *enable;          // is the stepper enabled?
-      hal_bit_t *control_type;    // 0="position control", 1="velocity control"
-      hal_bit_t *position_reset;  // reset position when true
     } pin;
 
     struct {
@@ -79,10 +75,6 @@ typedef struct {
       hal_float_t maxaccel;        // max accel (pos units/sec^2)
     } param;
   } hal;
-
-  // this variable holds the previous position command, for
-  // computing the feedforward velocity
-  hal_float_t old_position_cmd;
 
   fixp_t prev_accumulator;
   int64_t subcounts;
@@ -102,6 +94,7 @@ typedef struct {
                                           // passed through to LinuxCNC
 
   bool spi_reset_old;
+  bool config_sent;                       // track if configuration has been sent to PRU
 } state_t;
 
 static state_t *state;
@@ -124,7 +117,7 @@ static int rt_peripheral_init();
 static int rt_bcm2835_init();
 static int rt_rp1lib_init();
 
-static void update_freq(void *arg, long l_period_ns);
+static void send_config();
 static void spi_write();
 static void spi_read();
 static void spi_transfer();
@@ -143,6 +136,14 @@ int rtapi_app_main(void) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc() failed\n", modname);
     hal_exit(comp_id);
     return -1;
+  }
+
+  // Initialize state variables
+  state->config_sent = false;
+  state->spi_reset_old = false;
+  for (int i = 0; i < STEPGENS; i++) {
+    state->stepgens[i].subcounts = 0;
+    state->stepgens[i].prev_accumulator = 0;
   }
 
   if (rt_peripheral_init() != 0) {
@@ -179,27 +180,13 @@ int rtapi_app_main(void) {
 
     if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->enable, comp_id, "%s.stepgen.%s.enable", prefix, name))) return -1;
 
-    if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->control_type, comp_id, "%s.stepgen.%s.control-type", prefix, name)))
-      return -1;
-
-    if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->position_reset, comp_id, "%s.stepgen.%s.position-reset", prefix, name)))
-      return -1;
-
     if (pin_err(hal_pin_float_newf(HAL_IN, &pin->position_cmd, comp_id, "%s.stepgen.%s.position-cmd", prefix, name)))
       return -1;
     *pin->position_cmd = 0.0;
 
-    if (pin_err(hal_pin_float_newf(HAL_IN, &pin->velocity_cmd, comp_id, "%s.stepgen.%s.velocity-cmd", prefix, name)))
-      return -1;
-    *pin->velocity_cmd = 0.0;
-
     if (pin_err(hal_pin_float_newf(HAL_OUT, &pin->position_fb, comp_id, "%s.stepgen.%s.position-fb", prefix, name)))
       return -1;
     *pin->position_fb = 0.0;
-
-    if (pin_err(hal_pin_float_newf(HAL_OUT, &pin->velocity_fb, comp_id, "%s.stepgen.%s.velocity-fb", prefix, name)))
-      return -1;
-    *pin->velocity_fb = 0.0;
 
     if (pin_err(hal_pin_s32_newf(HAL_OUT, &pin->counts, comp_id, "%s.stepgen.%s.counts", prefix, name))) return -1;
     *pin->counts = 0;
@@ -243,17 +230,9 @@ int rtapi_app_main(void) {
 
   // Export functions
   char name[HAL_NAME_LEN + 1];
-  rtapi_snprintf(name, sizeof(name), "%s.update-freq", prefix);
-  int retval = hal_export_funct(name, update_freq, state, 1, 0, comp_id);
-  if (retval < 0) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: update function export failed\n", modname);
-    hal_exit(comp_id);
-    return -1;
-  }
-
   rtapi_snprintf(name, sizeof(name), "%s.write", prefix);
   /* no FP operations */
-  retval = hal_export_funct(name, spi_write, 0, 0, 0, comp_id);
+  int retval = hal_export_funct(name, spi_write, 0, 0, 0, comp_id);
   if (retval < 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: write function export failed\n", modname);
     hal_exit(comp_id);
@@ -284,180 +263,35 @@ bool pin_err(const int retval) {
   return false;
 }
 
-static void stepgen_instance_position_control(stepper_state_t *s, const long l_period_ns, double *new_vel) {
-  //(*s->hal.pin.dbg_pos_minus_prev_cmd) = (*s->hal.pin.position_fb) - s->old_position_cmd;
+static void send_config() {
+  // Send configuration to PRU
+  tx_data.header = PRU_CONF;
 
-  // calculate feed-forward velocity in machine units per second
-  const double ff_vel = (*s->hal.pin.position_cmd - s->old_position_cmd) / f_period_s;
-  //(*s->hal.pin.dbg_ff_vel) = ff_vel;
-
-  s->old_position_cmd = *s->hal.pin.position_cmd;
-
-  const double velocity_error = *s->hal.pin.velocity_fb - ff_vel;
-  // (*s->hal.pin.dbg_vel_error) = velocity_error;
-
-  // Do we need to change speed to match the speed of position-cmd?
-  // If maxaccel is 0, there's no accel limit: fix this velocity error
-  // by the next servo period!  This leaves acceleration control up to
-  // the trajectory planner.
-  // If maxaccel is not zero, the user has specified a maxaccel and we
-  // adhere to that.
-  double match_accel;
-  if (velocity_error > 0.0) {
-    if (s->hal.param.maxaccel == 0) {
-      match_accel = -velocity_error / f_period_s;
-    } else {
-      match_accel = -s->hal.param.maxaccel;
-    }
-  } else if (velocity_error < 0.0) {
-    if (s->hal.param.maxaccel == 0) {
-      match_accel = velocity_error / f_period_s;
-    } else {
-      match_accel = s->hal.param.maxaccel;
-    }
-  } else {
-    match_accel = 0;
-  }
-
-  double seconds_to_vel_match;
-  if (match_accel == 0) {
-    // vel is just right, dont need to accelerate
-    seconds_to_vel_match = 0.0;
-  } else {
-    seconds_to_vel_match = -velocity_error / match_accel;
-  }
-  //*s->hal.pin.dbg_s_to_match = seconds_to_vel_match;
-
-  // compute expected position at the time of velocity match
-  // Note: this is "feedback position at the beginning of the servo period after we attain velocity match"
-  double position_at_match;
-  {
-    double avg_v = (ff_vel + *s->hal.pin.velocity_fb) * 0.5;
-    position_at_match = *s->hal.pin.position_fb + avg_v * (seconds_to_vel_match + f_period_s);
-  }
-
-  // Note: this assumes that position-cmd keeps the current velocity
-  const double position_cmd_at_match = *s->hal.pin.position_cmd + ff_vel * seconds_to_vel_match;
-  const double error_at_match = position_at_match - position_cmd_at_match;
-
-  //*s->hal.pin.dbg_err_at_match = error_at_match;
-
-  double velocity_cmd;
-  if (seconds_to_vel_match < f_period_s) {
-    // we can match velocity in one period
-    // try to correct whatever position error we have
-    velocity_cmd = ff_vel - (0.5 * error_at_match / f_period_s);
-
-    // apply accel limits?
-    if (s->hal.param.maxaccel > 0) {
-      if (velocity_cmd > *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s) {
-        velocity_cmd = *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s;
-      } else if (velocity_cmd < *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s) {
-        velocity_cmd = *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s;
-      }
-    }
-
-  } else {
-    // we're going to have to work for more than one period to match velocity
-    // FIXME: I dont really get this part yet
-
-    // calculate change in final position if we ramp in the opposite direction for one period
-    const double dv = -2.0 * match_accel * f_period_s;
-    const double dp = dv * seconds_to_vel_match;
-
-    // decide which way to ramp
-    if (fabs(error_at_match + dp * 2.0) < fabs(error_at_match)) {
-      match_accel = -match_accel;
-    }
-
-    // and do it
-    velocity_cmd = *s->hal.pin.velocity_fb + match_accel * f_period_s;
-  }
-
-  *new_vel = velocity_cmd;
-}
-
-void update_freq(void *arg, const long l_period_ns) {
-  state_t *state = arg;
-
-  // loop through generators
   for (int i = 0; i < STEPGENS; i++) {
     stepper_state_t *s = &state->stepgens[i];
 
-    // first sanity-check our maxaccel and maxvel params
-    // maxvel must be >= 0.0, and may not be faster than 1 step per (steplen+stepspace) seconds
+    // Convert to 24.8 fixed-point format
+    tx_data.stepper_position_scale[i] = (uint32_t)(fabs(s->hal.param.position_scale) * 256.0);
+    tx_data.stepper_max_accel[i] = (uint32_t)(s->hal.param.maxaccel * 256.0);
+    tx_data.stepper_init_position[i] = (uint32_t)(*s->hal.pin.position_cmd * 256.0);
+  }
 
-    const double max_steps_per_s = (double)BASE_FREQUENCY / 2.0;
-
-    // max vel supported by current step timings & position-scale
-    const double physical_maxvel = max_steps_per_s / fabs(s->hal.param.position_scale);
-    // physical_maxvel = force_precision(physical_maxvel);
-
-    if (s->hal.param.maxvel < 0.0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxvel < 0, setting to its absolute value\n", i);
-      s->hal.param.maxvel = fabs(s->hal.param.maxvel);
-    }
-
-    if (s->hal.param.maxvel > physical_maxvel) {
-      rtapi_print_msg(
-          RTAPI_MSG_ERR,
-          "stepgen.%02d.maxvel is too big for current step timings (%f steps/s) & position-scale (%f), clipping to "
-          "max possible (%f)\n",
-          i, max_steps_per_s, s->hal.param.position_scale, physical_maxvel);
-      s->hal.param.maxvel = physical_maxvel;
-    }
-
-    double maxvel;  // actual max vel to use this time
-
-    if (s->hal.param.maxvel == 0.0) {
-      maxvel = physical_maxvel;
-    } else {
-      maxvel = s->hal.param.maxvel;
-    }
-
-    // maxaccel may not be negative
-    if (s->hal.param.maxaccel < 0.0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxaccel < 0, setting to its absolute value\n", i);
-      s->hal.param.maxaccel = fabs(s->hal.param.maxaccel);
-    }
-
-    double new_vel;
-    // select the new velocity we want
-    if (*s->hal.pin.control_type == 0) {
-      stepgen_instance_position_control(s, l_period_ns, &new_vel);
-    } else {
-      // velocity-mode control is easy
-      new_vel = *s->hal.pin.velocity_cmd;
-      if (s->hal.param.maxaccel > 0.0) {
-        if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) > s->hal.param.maxaccel) {
-          new_vel = (*s->hal.pin.velocity_fb) + (s->hal.param.maxaccel * f_period_s);
-        } else if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) < -s->hal.param.maxaccel) {
-          new_vel = (*s->hal.pin.velocity_fb) - (s->hal.param.maxaccel * f_period_s);
-        }
-      }
-    }
-
-    // clip velocity to maxvel
-    if (new_vel > maxvel) {
-      new_vel = maxvel;
-    } else if (new_vel < -maxvel) {
-      new_vel = -maxvel;
-    }
-
-    *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
-
-    tx_data.stepgen_freq_command[i] = (fixp_t)(new_vel * s->hal.param.position_scale * FIXED_ONE);
+  if (*state->spi_status) {
+    spi_transfer();
+    state->config_sent = true;
+    rtapi_print_msg(RTAPI_MSG_INFO, "%s: Configuration sent to PRU\n", modname);
   }
 }
+
+
 
 void spi_read() {
   // Data header
   tx_data.header = PRU_READ;
 
   if (*(state->spi_enable)) {
+    // Try SPI communication on reset rising edge OR when status is already good
     if ((*state->spi_reset && !state->spi_reset_old) || *state->spi_status) {
-      // reset rising edge detected, try SPI transfer and reset OR PRU running
-
       // Transfer to and from the PRU
       spi_transfer();
 
@@ -470,42 +304,14 @@ void spi_read() {
           for (int i = 0; i < STEPGENS; i++) {
             stepper_state_t *s = &state->stepgens[i];
 
-            const fixp_t acc = rx_data.stepgen_feedback[i];
+            // PRU sends position feedback directly in machine units
+            const fixp_t position_fb_raw = rx_data.stepper_position_fb[i];
 
-            // those tricky users are always trying to get us to divide by zero
-            if (fabs(s->hal.param.position_scale) < 1e-6) {
-              if (s->hal.param.position_scale >= 0.0) {
-                s->hal.param.position_scale = 1.0;
-                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
-              } else {
-                s->hal.param.position_scale = -1.0;
-                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
-              }
-            }
+            // Convert from fixed-point to machine units
+            *s->hal.pin.position_fb = (double)position_fb_raw / FIXED_ONE;
 
-            // The accumulator is a 32.32 bit fixed-point
-            // representation of the current stepper position.
-            // The fractional part gives accurate velocity at low speeds, and
-            // sub-step position feedback (like sw stepgen).
-            fixp_t acc_delta = acc - s->prev_accumulator;
-            if (acc_delta > INT64_MAX) {
-              acc_delta -= UINT64_MAX;
-            } else if (acc_delta < INT64_MIN) {
-              acc_delta += UINT64_MAX;
-            }
-
-            s->subcounts += acc_delta;
-
-            if (*s->hal.pin.position_reset != 0) {
-              s->subcounts = 0;
-            }
-
-            *s->hal.pin.counts = (int32_t)(s->subcounts / FIXED_ONE);
-
-            // note that it's important to use "subcounts/(1 << STEP_BIT)" instead of just
-            // "counts" when computing position_fb, because position_fb needs sub-count precision
-            *s->hal.pin.position_fb = (double)s->subcounts / FIXED_ONE / s->hal.param.position_scale;
-            s->prev_accumulator = acc;
+            // Calculate counts for compatibility (position in steps)
+            *s->hal.pin.counts = (int32_t)(*s->hal.pin.position_fb * s->hal.param.position_scale);
           }
 
           for (int i = 0; i < INPUT_VARS; i++) {
@@ -535,31 +341,45 @@ void spi_read() {
       }
     }
   } else {
+    // SPI disabled, clear status
     *state->spi_status = 0;
+  }
+
+  // Reset config_sent flag on reset rising edge to force reconfiguration
+  if (*state->spi_reset && !state->spi_reset_old) {
+    state->config_sent = false;
   }
 
   state->spi_reset_old = *state->spi_reset;
 }
 
 void spi_write() {
-  int i;
+  // Send configuration first if not yet sent
+  if (!state->config_sent && *state->spi_status) {
+    send_config();
+    return;
+  }
 
+  // Normal operation - send position commands
   tx_data.header = PRU_WRITE;
 
-  for (i = 0; i < STEPGENS; i++) {
+  // Send position commands to PRU (PRU handles position scaling)
+  for (int i = 0; i < STEPGENS; i++) {
     const stepper_state_t *s = &state->stepgens[i];
+    tx_data.stepper_pos_command[i] = (fixp_t)(*s->hal.pin.position_cmd * FIXED_ONE);
+
     if (*s->hal.pin.enable == 1) {
-      tx_data.stepgen_enable_mask |= 1 << i;
+      tx_data.stepper_enable_mask |= 1 << i;
     } else {
-      tx_data.stepgen_enable_mask &= ~(1 << i);
+      tx_data.stepper_enable_mask &= ~(1 << i);
     }
   }
 
-  for (i = 0; i < OUTPUT_VARS; i++) {
+  for (int i = 0; i < OUTPUT_VARS; i++) {
     tx_data.output_vars[i] = (int32_t)*state->output_vars[i];
   }
 
-  for (i = 0; i < OUTPUT_PINS; i++) {
+  for (int i = 0; i < OUTPUT_PINS; i++) {
     if (*state->outputs[i] == 1) {
       tx_data.outputs |= 1 << i;
     } else {
