@@ -405,6 +405,7 @@ void spi_transfer() {
       for (int i = 0; i < SPI_BUF_SIZE; i++) {
         rp1spi_transfer(0, tx_data.buffer + i, rx_data.buffer + i, 1);
       }
+      break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");
   }
