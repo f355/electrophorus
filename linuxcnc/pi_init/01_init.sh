@@ -22,7 +22,7 @@ DEBIAN_NONINTERACTIVE=1 apt -y upgrade
 rpi-update
 
 apt install -y linux-image-rpi-v8-rt xfce4 xfce4-terminal linuxcnc-uspace linuxcnc-uspace-dev python3-qtpyvcp \
-    python3-probe-basic flexgui cmake ninja-build gcc-arm-none-eabi openocd
+    python3-probe-basic flexgui cmake ninja-build gcc-arm-none-eabi openocd tio
 
 # switch to realtime kernel and set kernel command line to isolate the 4th core for the servo thread,
 # also enable UART

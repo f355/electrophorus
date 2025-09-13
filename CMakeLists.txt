@@ -5,7 +5,12 @@ cmake_policy(VERSION 3.19...3.22)
 # so pretend we already have it
 set(HAVE_PYTHON_CYSECURETOOLS TRUE)
 
-set(MBED_APP_JSON_PATH mbed_app.json5)
+# Use debug config for Debug builds, release config for everything else
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(MBED_APP_JSON_PATH mbed_app_debug.json5)
+else ()
+    set(MBED_APP_JSON_PATH mbed_app_release.json5)
+endif ()
 
 include(mbed-os/tools/cmake/mbed_toolchain_setup.cmake)
 
@@ -21,6 +26,9 @@ if ("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Linux")
 else ()
     set(UPLOAD_METHOD NONE)
 endif ()
+
+# Fix implicit function declaration error in mbed-os
+add_compile_options(-Wno-error=implicit-function-declaration)
 
 add_subdirectory(mbed-os)
 
@@ -42,8 +50,23 @@ add_executable(${PROJECT_NAME}
         src/spi_comms.cpp
 )
 
+# Add crash handler only for debug builds
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_sources(${PROJECT_NAME} PRIVATE src/crash_handler.cpp)
+endif()
+
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)
 
 target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
+
+# Add debug flags for better crash reporting
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(${PROJECT_NAME} PRIVATE
+            -g3                          # Maximum debug info
+            -fno-omit-frame-pointer      # Keep frame pointers for better stack traces
+            -funwind-tables              # Generate unwind tables
+            -fasynchronous-unwind-tables # Better exception handling
+    )
+endif ()
 
 mbed_set_post_build(${PROJECT_NAME})

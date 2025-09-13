@@ -4,13 +4,14 @@
       "target.application-profile": "bare-metal",
       "target.memory_bank_config": {
         "IROM1": {
-          // the first 16kB of ROM are taken by the bootloader code,
-          // and the bootloader flashes the firmware starting at 16kB/0x4000
+          // the bootloader code takes the first 16kB of ROM,
+          // and flashes the firmware starting at 16kB/0x4000
           "start": 0x4000,
           "size": 0x7c000,
         }
       },
       "target.c_lib": "std",
+      "target.boot-stack-size": 8192,
       "platform.stdio-baud-rate": 115200,
     }
   }
