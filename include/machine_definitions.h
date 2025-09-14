@@ -14,7 +14,7 @@
 
 // clang-format off
 #define INPUT_PIN_DESC \
-  {{"e-stop", 0, 20, false, false}, \
+  {{"e-stop", 0, 20, false, true}, \
    {"stall-alarm-spindle", 0, 19, false, false}, \
    {"stall-alarm-x", 0, 1, false, false}, \
    {"stall-alarm-y", 0, 0, false, false}, \

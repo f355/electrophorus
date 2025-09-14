@@ -22,6 +22,8 @@ class Pin {
     return this;
   }
 
+  bool inverting;
+
   Pin* invert() {
     this->inverting = true;
     return this;
@@ -39,7 +41,6 @@ class Pin {
   [[nodiscard]] PinName to_pin_name() const;
 
  private:
-  bool inverting;
   LPC_GPIO_TypeDef* port;
 
   uint8_t pin;

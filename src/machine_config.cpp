@@ -34,7 +34,7 @@ vector<Module*> machine_servo_modules(SpiComms* comms) {
 
   return {
       // e-stop
-      new EStop(new Pin(0, 20), comms),
+      new EStop((new Pin(0, 20))->invert(), comms),
 
       new DigitalIns(INPUT_PINS, input_pins, comms->tx_data),  //
       new DigitalOuts(OUTPUT_PINS, output_pins, comms->rx_data),
