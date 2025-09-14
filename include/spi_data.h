@@ -10,7 +10,6 @@
 // SPI configuration
 #define SPI_BUF_SIZE 56  // maximum of rx/tx sizes
 
-typedef int64_t fixp_t;  // 32.32 fixed point type to somewhat distinguish it from integers
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)
 
@@ -22,7 +21,7 @@ typedef union {
   uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    volatile fixp_t stepgen_freq_command[STEPGENS];
+    volatile float stepgen_freq_command[STEPGENS];
     int32_t output_vars[OUTPUT_VARS];
     uint8_t stepgen_enable_mask;
     uint16_t outputs;
@@ -35,7 +34,7 @@ typedef union {
   uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    fixp_t stepgen_feedback[STEPGENS];
+    int64_t stepgen_feedback[STEPGENS];
     int32_t input_vars[INPUT_VARS];
     uint16_t inputs;
   };

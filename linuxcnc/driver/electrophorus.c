@@ -65,7 +65,6 @@ typedef struct {
     struct {
       hal_float_t *position_cmd;  // in: position command (position units)
       hal_float_t *velocity_cmd;  // in: velocity command
-      hal_s32_t *counts;          // out: position feedback (raw counts)
       hal_float_t *position_fb;   // out: position feedback (position units)
       hal_float_t *velocity_fb;   // out: velocity feedback
       hal_bit_t *enable;          // is the stepper enabled?
@@ -84,8 +83,8 @@ typedef struct {
   // computing the feedforward velocity
   hal_float_t old_position_cmd;
 
-  fixp_t prev_accumulator;
-  int64_t subcounts;
+  int64_t prev_step_position;
+  int64_t step_position;
 } stepper_state_t;
 
 typedef struct {
@@ -200,9 +199,6 @@ int rtapi_app_main(void) {
     if (pin_err(hal_pin_float_newf(HAL_OUT, &pin->velocity_fb, comp_id, "%s.stepgen.%s.velocity-fb", prefix, name)))
       return -1;
     *pin->velocity_fb = 0.0;
-
-    if (pin_err(hal_pin_s32_newf(HAL_OUT, &pin->counts, comp_id, "%s.stepgen.%s.counts", prefix, name))) return -1;
-    *pin->counts = 0;
   }
 
   for (int i = 0; i < OUTPUT_VARS; i++) {
@@ -446,7 +442,7 @@ void update_freq(void *arg, const long l_period_ns) {
 
     *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
 
-    tx_data.stepgen_freq_command[i] = (fixp_t)(new_vel * s->hal.param.position_scale * FIXED_ONE);
+    tx_data.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
   }
 }
 
@@ -470,7 +466,7 @@ void spi_read() {
           for (int i = 0; i < STEPGENS; i++) {
             stepper_state_t *s = &state->stepgens[i];
 
-            const fixp_t acc = rx_data.stepgen_feedback[i];
+            const int64_t acc = rx_data.stepgen_feedback[i];
 
             // those tricky users are always trying to get us to divide by zero
             if (fabs(s->hal.param.position_scale) < 1e-6) {
@@ -487,25 +483,20 @@ void spi_read() {
             // representation of the current stepper position.
             // The fractional part gives accurate velocity at low speeds, and
             // sub-step position feedback (like sw stepgen).
-            fixp_t acc_delta = acc - s->prev_accumulator;
+            int64_t acc_delta = acc - s->prev_step_position;
             if (acc_delta > INT64_MAX) {
               acc_delta -= UINT64_MAX;
             } else if (acc_delta < INT64_MIN) {
               acc_delta += UINT64_MAX;
             }
-
-            s->subcounts += acc_delta;
+            s->step_position += acc_delta;
 
             if (*s->hal.pin.position_reset != 0) {
-              s->subcounts = 0;
+              s->step_position = 0;
             }
 
-            *s->hal.pin.counts = (int32_t)(s->subcounts / FIXED_ONE);
-
-            // note that it's important to use "subcounts/(1 << STEP_BIT)" instead of just
-            // "counts" when computing position_fb, because position_fb needs sub-count precision
-            *s->hal.pin.position_fb = (double)s->subcounts / FIXED_ONE / s->hal.param.position_scale;
-            s->prev_accumulator = acc;
+            *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
+            s->prev_step_position = acc;
           }
 
           for (int i = 0; i < INPUT_VARS; i++) {

@@ -33,23 +33,23 @@ void Stepgen::run() {
   if (this->last_commanded_frequency != *this->commanded_frequency) {
     // the commanded frequency has changed, recalculate the increment
     this->last_commanded_frequency = *this->commanded_frequency;
-    this->increment = this->last_commanded_frequency / ticker_frequency;
+    this->increment =
+        static_cast<int64_t>(this->last_commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
 
     // The sign of the increment indicates the desired direction
     if (const bool is_forward = increment > 0; this->current_dir != is_forward) {
       // Direction has changed, flip dir pin and do not step this iteration to give some setup time.
       // TODO: make hold time configurable.
       this->current_dir = is_forward;
-      // Set direction pin
-      this->dir_pin->set(this->current_dir);
+      this->dir_pin->set(is_forward);
       return;
     }
   }
 
   if (this->increment == 0) return;
 
-  fixp_t position = *this->step_position;
-  const fixp_t old_position = position;
+  int64_t position = *this->step_position;
+  const int64_t old_position = position;
   position += increment;
 
   if ((old_position ^ position) & FIXED_ONE) {
