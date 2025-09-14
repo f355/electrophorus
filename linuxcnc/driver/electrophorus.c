@@ -380,6 +380,7 @@ void spi_write() {
       tx_data.stepgen_init_pos[i] = *s->hal.pin.position_cmd * s->hal.param.position_scale;
     }
     state->config_sent = true;
+    rtapi_print("electrophorus: sending config to MCU\n");
     // Send config this cycle, normal data will be sent next cycle
     spi_transfer();
     return;
