@@ -8,7 +8,7 @@
 
 IrqTicker::IrqTicker(LPC_TIM_TypeDef* timer, const IRQn_Type irq, const int8_t sbit, const uint32_t frequency,
                      const uint32_t priority, void (*wrapper)())
-    : timer(timer), irq(irq), sbit(sbit), priority(priority), wrapper(wrapper), frequency(frequency) {};
+    : timer(timer), irq(irq), sbit(sbit), frequency(frequency), priority(priority), wrapper(wrapper) {};
 
 void IrqTicker::start() {
   if (this->frequency == 0) return;
@@ -28,7 +28,7 @@ void IrqTicker::handle_interrupt() const {
   const unsigned int isr_mask = this->timer->IR;
   this->timer->IR = isr_mask; /* Clear the Interrupt Bit */
 
-  for (const auto m : this->modules) m->run();
+  this->tick();
 }
 
 BaseTicker::BaseTicker() : IrqTicker(LPC_TIM0, TIMER0_IRQn, 1, BASE_FREQUENCY, 2, irq_wrapper) {}
@@ -40,6 +40,16 @@ BaseTicker* BaseTicker::instance() {
   return &instance;
 }
 
+void BaseTicker::tick() const {
+  for (const auto m : this->modules) m->run_base();
+}
+
+void BaseTicker::register_modules(const std::vector<Module*>& ms) {
+  for (auto m : ms) {
+    if (m->is_base()) this->modules.push_back(m);
+  }
+}
+
 ServoTicker::ServoTicker() : IrqTicker(LPC_TIM1, TIMER1_IRQn, 2, SERVO_FREQUENCY, 3, irq_wrapper) {}
 
 void ServoTicker::irq_wrapper() { instance()->handle_interrupt(); }
@@ -47,4 +57,14 @@ void ServoTicker::irq_wrapper() { instance()->handle_interrupt(); }
 ServoTicker* ServoTicker::instance() {
   static ServoTicker instance;
   return &instance;
+}
+
+void ServoTicker::tick() const {
+  for (const auto m : this->modules) m->run_servo();
+}
+
+void ServoTicker::register_modules(const std::vector<Module*>& ms) {
+  for (auto m : ms) {
+    if (m->is_servo()) this->modules.push_back(m);
+  }
 }

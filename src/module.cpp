@@ -4,4 +4,7 @@
 
 #include "pin.h"
 
-void Module::run() {}
+bool Module::is_base() { return false; }
+bool Module::is_servo() { return true; }
+void Module::run_base() {}
+void Module::run_servo() {}

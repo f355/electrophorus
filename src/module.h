@@ -6,7 +6,11 @@ class Module {
   ~Module() = default;
 
  public:
-  virtual void run();
+  virtual bool is_base();
+  virtual bool is_servo();
+
+  virtual void run_base();
+  virtual void run_servo();
 };
 
 #endif

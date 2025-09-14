@@ -6,8 +6,6 @@
 
 void machine_init();
 
-vector<Module*> machine_base_modules(const SpiComms* comms);
-
-vector<Module*> machine_servo_modules(SpiComms* comms);
+vector<Module*> machine_modules(SpiComms* comms);
 
 #endif

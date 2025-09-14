@@ -32,17 +32,19 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   const auto comms = new SpiComms();
   printf("SPI initialized.\n");
 
+  const auto modules = machine_modules(comms);
+
   // the terminology here is that of LinuxCNC.
   // there, the "base" thread is doing hard-realtime stuff like pulsing the steppers,
   // and the "servo" thread is handling less-urgent tasks (motion planning, pin IO handling, etc.) at a lower frequency.
   printf("initializing base ticker...\n");
-  auto base_ticker = BaseTicker::instance();
-  base_ticker->modules = machine_base_modules(comms);
+  const auto base_ticker = BaseTicker::instance();
+  base_ticker->register_modules(modules);
   base_ticker->start();
 
   printf("initializing servo ticker...\n");
-  auto servo_ticker = ServoTicker::instance();
-  servo_ticker->modules = machine_servo_modules(comms);
+  const auto servo_ticker = ServoTicker::instance();
+  servo_ticker->register_modules(modules);
   servo_ticker->start();
   printf("tickers initialized.\n");
 

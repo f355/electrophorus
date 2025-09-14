@@ -27,7 +27,8 @@ class Stepgen final : public Module {
 
   Pin *step_pin, *dir_pin;
 
-  void run() override;
+  bool is_base() override;
+  void run_base() override;
 };
 
 #endif

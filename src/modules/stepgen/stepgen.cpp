@@ -12,7 +12,7 @@ Stepgen::Stepgen(const int stepper_number, Pin* step_pin, Pin* dir_pin, const ui
   this->dir_pin->set(this->current_dir);
 }
 
-void Stepgen::run() {
+void Stepgen::run_base() {
   if (this->is_stepping) {
     // bring down the step pin that was set high on the previous tick
     this->step_pin->set(false);
@@ -59,3 +59,5 @@ void Stepgen::run() {
   }
   *this->step_position = position;
 }
+
+bool Stepgen::is_base() { return true; }
