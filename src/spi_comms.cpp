@@ -137,6 +137,7 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
       dma.Disable(other_memcpy);
       break;
 
+    case PRU_CONFIG:
     case PRU_WRITE:
       data_ready = true;
       reject_count = 0;
