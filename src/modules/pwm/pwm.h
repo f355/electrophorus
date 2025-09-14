@@ -16,7 +16,8 @@ class PWM final : public Module {
  public:
   PWM(int var_number, const Pin *pin, int period_us, volatile rxData_t *rx_data);
 
-  void run_servo() override;
+  bool listens_to_rx() override;
+  void on_rx() override;
 };
 
 #endif

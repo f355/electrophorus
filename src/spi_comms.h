@@ -36,6 +36,8 @@ class SpiComms {
  public:
   SpiComms();
 
+  static void data_ready_callback();
+
   rxData_t volatile* rx_data;
   txData_t volatile* tx_data;
 

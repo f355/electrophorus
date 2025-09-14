@@ -19,6 +19,13 @@ void Stepgen::run_base() {
     this->is_stepping = false;
   }
 
+  if (this->dir_flipped) {
+    // the direction of travel has changed, do not step this iteration to give some setup time.
+    // TODO(f355): make hold time configurable.
+    this->dir_flipped = false;
+    return;
+  }
+
   if ((*this->stepper_enable & this->stepper_enable_mask) == 0) {
     return;  // stepper is disabled, nothing to do
   }
@@ -29,22 +36,6 @@ void Stepgen::run_base() {
   //
   // That value is, unsurprisingly, the fixed-point commanded frequency divided by the integer ticker frequency - to get
   // steps/tick, you divide steps/second by ticks/second.
-
-  if (this->last_commanded_frequency != *this->commanded_frequency) {
-    // the commanded frequency has changed, recalculate the increment
-    this->last_commanded_frequency = *this->commanded_frequency;
-    this->increment =
-        static_cast<int64_t>(this->last_commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
-
-    // The sign of the increment indicates the desired direction
-    if (const bool is_forward = increment > 0; this->current_dir != is_forward) {
-      // Direction has changed, flip dir pin and do not step this iteration to give some setup time.
-      // TODO: make hold time configurable.
-      this->current_dir = is_forward;
-      this->dir_pin->set(is_forward);
-      return;
-    }
-  }
 
   if (this->increment == 0) return;
 
@@ -59,5 +50,26 @@ void Stepgen::run_base() {
   }
   *this->step_position = position;
 }
+
+void Stepgen::on_rx() {
+  if ((*this->stepper_enable & this->stepper_enable_mask) == 0 ||
+      (this->last_commanded_frequency == *this->commanded_frequency)) {
+    return;  // stepper is disabled or the command hasn't changed, nothing to do
+  }
+
+  // the commanded frequency has changed, recalculate the increment
+  this->last_commanded_frequency = *this->commanded_frequency;
+  this->increment =
+      static_cast<int64_t>(this->last_commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
+
+  // The sign of the increment indicates the desired direction
+  if (const bool is_forward = increment > 0; this->current_dir != is_forward) {
+    this->current_dir = is_forward;
+    this->dir_flipped = true;
+    this->dir_pin->set(is_forward);
+  }
+}
+
+bool Stepgen::listens_to_rx() { return true; }
 
 bool Stepgen::is_base() { return true; }

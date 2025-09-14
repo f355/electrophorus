@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "irq_ticker.h"
 #include "machine_config.h"
 #include "mbed.h"
+#include "rx_listener.h"
 #include "spi_comms.h"
 
 [[noreturn]] int main() {
@@ -47,6 +48,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   servo_ticker->register_modules(modules);
   servo_ticker->start();
   printf("tickers initialized.\n");
+
+  printf("initializing receive listener...\n");
+  RxListener::instance()->register_modules(modules);
+  RxListener::start();
+  printf("receive listener initialized.\n");
 
   // wait for tickers to read IO before moving on
   wait_us(1000000);

@@ -15,6 +15,7 @@ class DigitalIns final : public Module {
  public:
   DigitalIns(uint8_t num_pins, const inputPin_t pins[], volatile txData_t* tx_data);
 
+  bool is_servo() override;
   void run_servo() override;
 };
 

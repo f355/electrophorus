@@ -6,9 +6,11 @@ PWM::PWM(const int var_number, const Pin* pin, const int period_us, volatile rxD
       period_us(period_us),
       duty_cycle(0) {}
 
-void PWM::run_servo() {
+void PWM::on_rx() {
   if (this->duty_cycle != *this->set_duty_cycle) {
     this->duty_cycle = *this->set_duty_cycle;
     this->pwm_pin->pulsewidth_us(this->period_us * this->duty_cycle / 1000);
   }
 }
+
+bool PWM::listens_to_rx() { return true; }

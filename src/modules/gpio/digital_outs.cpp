@@ -1,4 +1,5 @@
 #include "digital_outs.h"
+
 #include "pin.h"
 
 DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], volatile rxData_t* rx_data)
@@ -24,13 +25,15 @@ DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], volat
   }
 }
 
-void DigitalOuts::run_servo() {
-  const uint16_t outputs = *this->outputs ^ invert_mask;
+void DigitalOuts::on_rx() {
+  const uint16_t pin_states = *this->outputs ^ invert_mask;
   for (uint8_t i = 0; i < num_pins; i++) {
-    if (outputs >> i & 0b1) {
+    if (pin_states >> i & 0b1) {
       ports[i]->FIOSET |= pin_masks[i];
     } else {
       ports[i]->FIOCLR |= pin_masks[i];
     }
   }
 }
+
+bool DigitalOuts::listens_to_rx() { return true; }

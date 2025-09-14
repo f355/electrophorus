@@ -27,9 +27,9 @@ add_subdirectory(mbed-os)
 add_subdirectory(lib/MODDMA)
 
 add_executable(${PROJECT_NAME}
-        src/main.cpp
         src/irq_ticker.cpp
         src/machine_config.cpp
+        src/main.cpp
         src/module.cpp
         src/modules/adc/adc.cpp
         src/modules/e_stop/e_stop.cpp
@@ -39,6 +39,7 @@ add_executable(${PROJECT_NAME}
         src/modules/pwm/pwm.cpp
         src/modules/stepgen/stepgen.cpp
         src/pin.cpp
+        src/rx_listener.cpp
         src/spi_comms.cpp
 )
 

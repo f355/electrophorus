@@ -1,7 +1,7 @@
 #include "e_stop.h"
 
 EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms), normally_closed(pin->inverting) {
-  NVIC_SetPriority(EINT3_IRQn, 16);
+  NVIC_SetPriority(EINT3_IRQn, PIN_IRQ_PRIORITY);
   const auto irqPin = new InterruptIn(pin->to_pin_name());
   irqPin->rise(callback(this, &EStop::rise_handler));
   irqPin->fall(callback(this, &EStop::fall_handler));
@@ -33,6 +33,7 @@ void EStop::engaged() const {
   this->comms->rx_data->stepgen_enable_mask = 0;
   // kill the spindle (assumes the spindle speed is the first output_var)
   this->comms->rx_data->output_vars[0] = 0;
+  SpiComms::data_ready_callback();
 }
 
 // ReSharper disable once CppDFAUnreachableFunctionCall

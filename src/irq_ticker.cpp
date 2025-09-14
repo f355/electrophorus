@@ -31,7 +31,7 @@ void IrqTicker::handle_interrupt() const {
   this->tick();
 }
 
-BaseTicker::BaseTicker() : IrqTicker(LPC_TIM0, TIMER0_IRQn, 1, BASE_FREQUENCY, 2, irq_wrapper) {}
+BaseTicker::BaseTicker() : IrqTicker(LPC_TIM0, TIMER0_IRQn, 1, BASE_FREQUENCY, BASE_TICKER_PRIORITY, irq_wrapper) {}
 
 void BaseTicker::irq_wrapper() { instance()->handle_interrupt(); }
 
@@ -50,7 +50,7 @@ void BaseTicker::register_modules(const std::vector<Module*>& ms) {
   }
 }
 
-ServoTicker::ServoTicker() : IrqTicker(LPC_TIM1, TIMER1_IRQn, 2, SERVO_FREQUENCY, 3, irq_wrapper) {}
+ServoTicker::ServoTicker() : IrqTicker(LPC_TIM1, TIMER1_IRQn, 2, SERVO_FREQUENCY, SERVO_TICKER_PRIORITY, irq_wrapper) {}
 
 void ServoTicker::irq_wrapper() { instance()->handle_interrupt(); }
 

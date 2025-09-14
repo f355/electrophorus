@@ -15,6 +15,7 @@ class ADC final : public Module {
  public:
   ADC(int var_number, Pin* pin, volatile txData_t* tx_data);
 
+  bool is_servo() override;
   void run_servo() override;
 };
 

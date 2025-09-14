@@ -70,15 +70,17 @@ SpiComms::SpiComms()
       ->srcMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer1))
       ->dstMemAddr(reinterpret_cast<uint32_t>(rx_data))
       ->transferSize(SPI_BUF_SIZE)
-      ->transferType(MODDMA::m2m);
+      ->transferType(MODDMA::m2m)
+      ->attach_tc(&SpiComms::data_ready_callback);
 
   rx_memcpy_dma2->channelNum(MODDMA::Channel_5)
       ->srcMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer2))
       ->dstMemAddr(reinterpret_cast<uint32_t>(rx_data))
       ->transferSize(SPI_BUF_SIZE)
-      ->transferType(MODDMA::m2m);
+      ->transferType(MODDMA::m2m)
+      ->attach_tc(&SpiComms::data_ready_callback);
 
-  NVIC_SetPriority(DMA_IRQn, 1);
+  NVIC_SetPriority(DMA_IRQn, DMA_PRIORITY);
 
   this->tx_data->header = PRU_DATA;
 
@@ -113,6 +115,11 @@ void SpiComms::rx2_callback() {
                          this->rx_memcpy_dma1->channelNum());
 }
 
+void SpiComms::data_ready_callback() {
+  // trigger PendSV IRQ to signal that the data is ready
+  SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
+}
+
 // ReSharper disable once CppDFAUnreachableFunctionCall
 void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx, MODDMA_Config* memcpy,
                                 const uint32_t other_memcpy) {
@@ -133,7 +140,7 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
     case PRU_WRITE:
       data_ready = true;
       reject_count = 0;
-      // don't copy the rx_data if e-stop button is pressed
+      // don't copy the rx_data if the e-stop button is pressed
       if (!this->e_stop_active) dma.Prepare(memcpy);
       break;
 
@@ -212,13 +219,10 @@ void SpiComms::loop() {
         prev_state = current_state;
 
         // set the whole rxData buffer to 0
-        // rxData.rxBuffer is volatile so need to do this the long way. memset cannot be used for volatile
-        {
-          int n = sizeof(this->rx_data->buffer);
-          while (n-- > 0) {
-            this->rx_data->buffer[n] = 0;
-          }
-        }
+        // can't memset volatile memory, so use a loop instead
+        for (volatile uint8_t& b : this->rx_data->buffer) b = 0;
+        data_ready_callback();
+
         current_state = ST_IDLE;
     }
 

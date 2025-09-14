@@ -15,6 +15,7 @@ class DigitalOuts final : public Module {
  public:
   DigitalOuts(uint8_t num_pins, const outputPin_t pins[], volatile rxData_t* rx_data);
 
-  void run_servo() override;
+  bool listens_to_rx() override;
+  void on_rx() override;
 };
 #endif
