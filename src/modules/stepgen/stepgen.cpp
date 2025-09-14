@@ -59,20 +59,17 @@ void Stepgen::on_rx() {
     float maxaccel = this->rx_data->stepgen_maxaccel[this->stepper_number];
     float init_pos_steps = this->rx_data->stepgen_init_pos[this->stepper_number];
 
-    // Basic validation
-    if (maxvel >= 0 && maxaccel >= 0 && isfinite(init_pos_steps)) {
-      this->maxvel = maxvel;
-      this->maxaccel = maxaccel;
+    this->maxvel = maxvel;
+    this->maxaccel = maxaccel;
 
-      // Initialize DDS position from LinuxCNC
-      *this->step_position = static_cast<int64_t>(init_pos_steps * FIXED_ONE);
-      this->old_position_cmd = init_pos_steps;
+    // Initialize DDS position from LinuxCNC
+    *this->step_position = static_cast<int64_t>(init_pos_steps * FIXED_ONE);
+    this->old_position_cmd = init_pos_steps;
 
-      this->config_received = true;
+    this->config_received = true;
 
-      printf("Stepgen %d: config received - maxvel=%.1f, maxaccel=%.1f, init_pos=%.1f\n",
-             this->stepper_number, this->maxvel, this->maxaccel, init_pos_steps);
-    }
+    printf("Stepgen %d: config received - maxvel=%.1f, maxaccel=%.1f, init_pos=%.1f\n",
+           this->stepper_number, this->maxvel, this->maxaccel, init_pos_steps);
   }
 }
 
