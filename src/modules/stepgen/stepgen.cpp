@@ -67,9 +67,6 @@ void Stepgen::on_rx() {
     this->old_position_cmd = init_pos_steps;
 
     this->config_received = true;
-
-    printf("Stepgen %d: config received - maxvel=%.1f, maxaccel=%.1f, init_pos=%.1f\n",
-           this->stepper_number, this->maxvel, this->maxaccel, init_pos_steps);
   }
 }
 
