@@ -106,7 +106,7 @@ TOPLEVEL = ~/linuxcnc/nc_files/examples/remap_lib/python-stdglue/python/toplevel
 
 [EMCMOT]
 EMCMOT = motmod
-SERVO_PERIOD = 1000000
+SERVO_PERIOD = 1250000
 COMM_TIMEOUT = 1.0
 COMM_WAIT = 0.010
 BASE_PERIOD = 0

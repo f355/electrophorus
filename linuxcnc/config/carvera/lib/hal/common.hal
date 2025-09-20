@@ -3,26 +3,24 @@ loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EM
 
 loadrt electrophorus
 loadrt estop_latch names=estop-latch
-loadrt and2 count=2
 
-addf carvera.uart-xfer servo-thread
+addf carvera.uart-read servo-thread
 addf motion-command-handler servo-thread
 addf motion-controller servo-thread
-addf and2.0 servo-thread
-addf and2.1 servo-thread
 addf estop-latch servo-thread
 
 
-# E-Stop, comms, and machine power
+# e-stop, comms, and machine power
 
-# E-Stop latch: ok-in from user-enable-out; fault from physical E-Stop; ok-out -> comms-enable and emc-enable-in
-net estop.estop-ok estop-latch.ok-out => carvera.comms-enable => iocontrol.0.emc-enable-in
+# e-stop off drives comms-enable and power rails
+net estop.user-enable-out iocontrol.0.user-enable-out => carvera.comms-enable => carvera.output.power-12v => carvera.output.power-24v
+
+# user request to clear E-Stop: pulse goes to driver reset and estop-latch reset
 net estop.user-request-enable iocontrol.0.user-request-enable => carvera.comms-reset => estop-latch.reset
+
+# physical E-Stop input
 net estop.fault-in carvera.input.e-stop => estop-latch.fault-in
 
-# Machine power gating: user request AND UART ready AND comms OK
-net estop.user-enable-out iocontrol.0.user-enable-out => and2.0.in0 => estop-latch.ok-in
-net estop.uart-open carvera.comms-ready => and2.0.in1
-net estop.and0.out and2.0.out => and2.1.in0
-net estop.comms-ok carvera.comms-status => and2.1.in1
-net estop.machine-on and2.1.out => carvera.output.power-12v => carvera.output.power-24v
+# e-Stop gating: first good packet from MCU allows clearing E-Stop; ok-out informs LinuxCNC
+net estop.carvera-status carvera.comms-status => estop-latch.ok-in
+net estop.status estop-latch.ok-out => iocontrol.0.emc-enable-in

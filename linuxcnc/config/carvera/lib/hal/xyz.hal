@@ -7,7 +7,7 @@ net joint.x.position-cmd joint.0.motor-pos-cmd => carvera.stepgen.x.position-cmd
 net joint.x.position-fb carvera.stepgen.x.position-fb => joint.0.motor-pos-fb
 net joint.x.enable joint.0.amp-enable-out => carvera.stepgen.x.enable
 net joint.x.home carvera.input.endstop-x => joint.0.home-sw-in => joint.0.pos-lim-sw-in
-net joint.x.alarm carvera.input.stall-alarm-x => joint.0.amp-fault-in
+# net joint.x.alarm carvera.input.stall-alarm-x => joint.0.amp-fault-in
 
 # 1/Y
 setp carvera.stepgen.y.position-scale [JOINT_1]SCALE
@@ -18,7 +18,7 @@ net joint.y.position-cmd joint.1.motor-pos-cmd => carvera.stepgen.y.position-cmd
 net joint.y.position-fb carvera.stepgen.y.position-fb => joint.1.motor-pos-fb
 net joint.y.enable joint.1.amp-enable-out => carvera.stepgen.y.enable
 net joint.y.home carvera.input.endstop-y => joint.1.home-sw-in => joint.1.pos-lim-sw-in
-net joint.y.alarm carvera.input.stall-alarm-y => joint.1.amp-fault-in
+# net joint.y.alarm carvera.input.stall-alarm-y => joint.1.amp-fault-in
 
 # 2/Z
 setp carvera.stepgen.z.position-scale [JOINT_2]SCALE
@@ -29,4 +29,4 @@ net joint.z.position-cmd joint.2.motor-pos-cmd => carvera.stepgen.z.position-cmd
 net joint.z.position-fb carvera.stepgen.z.position-fb => joint.2.motor-pos-fb
 net joint.z.enable joint.2.amp-enable-out => carvera.stepgen.z.enable
 net joint.z.home carvera.input.endstop-z => joint.2.home-sw-in => joint.2.pos-lim-sw-in
-net joint.z.alarm carvera.input.stall-alarm-z => joint.2.amp-fault-in
+# net joint.z.alarm carvera.input.stall-alarm-z => joint.2.amp-fault-in

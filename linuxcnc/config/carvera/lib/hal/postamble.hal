@@ -1,1 +1,1 @@
-addf carvera.update-freq servo-thread
+addf carvera.uart-write servo-thread

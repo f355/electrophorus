@@ -29,10 +29,10 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+
 #include <pthread.h>
-#include <sched.h>
-
-
+#include <poll.h>
+#include <stdatomic.h>
 
 #include "hal.h"
 #include "protocol_definitions.h"
@@ -88,7 +88,7 @@ typedef struct {
   hal_float_t *input_vars[INPUT_VARS];    // input variables: thermistors, pulse counters, etc.
   hal_bit_t *outputs[OUTPUT_PINS];        // digital output pins
   // metrics
-  hal_bit_t *metrics_reset;        // in: pulse to reset metrics
+  hal_bit_t *metrics_reset;  // in: pulse to reset metrics
 
   // servo timing stats (us) — 1s window
   hal_s32_t *servo_us_1s_min;
@@ -137,8 +137,8 @@ typedef struct {
 
 static state_t *state;
 
-static linuxCncState_t linuxcnc_state;
-static pruState_t pru_state;
+static linuxCncState_t tx_frame;
+static pruState_t rx_frame;
 
 static bool pin_err(int retval);
 
@@ -149,30 +149,30 @@ const char *modname = MODNAME;
 const char *prefix = PREFIX;
 
 // UART (FT232R) pipelined exchange support
-static void uart_xfer();
+static void uart_read(void *arg, long l_period_ns);
+static void uart_write(void *arg, long l_period_ns);
 static int uart_open_config(void);
+// UART monitor state
+static pthread_t uart_mon_tid;
+static _Atomic int mon_run = 0;
+static _Atomic int uart_ready_flag = 0;   // 1 when opened and healthy
+static _Atomic int uart_healthy_flag = 0; // 1 when poll/ioctl health ok
+static _Atomic int uart_io_active = 0;    // 1 while servo read/write is in progress
+
+static void *uart_monitor(void *arg);
+
 static ssize_t read_exact(int fd, uint8_t *p, size_t n);
 static ssize_t write_exact(int fd, const uint8_t *p, size_t n);
 static int uart_fd = -1;
-static void *uart_init_worker(void *arg);
 
 #define UART_DEV "/dev/ttyUSB0"
 #define UART_BAUD 3000000
 
-// Non-RT init worker controls
-static pthread_t init_thread;
-static pthread_mutex_t init_mtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t init_cv = PTHREAD_COND_INITIALIZER;
-static volatile int init_stop = 0;
-// init_request: 0=none, 1=open, 2=close
-static volatile int init_request = 0;
-// init_ready: 1 when UART is opened+initialized by worker
-static volatile int init_ready = 0;
+// Track comms-reset edge and prime/reply handshake across the split read/write
+static int last_comms_reset = 0;
+static int prime_pending = 0;      // allow first write on reset edge
+static int awaiting_reply = 0;     // force next read even while status==0
 
-// Track comms-enable edge for clean start (reset USB-serial side)
-static int last_comms_enable = 0;
-
-static void update_freq(void *arg, long l_period_ns);
 
 int rtapi_app_main(void) {
   // connect to the HAL, initialise the driver
@@ -197,7 +197,6 @@ int rtapi_app_main(void) {
   if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->comms_ready, comp_id, "%s.comms-ready", prefix))) return -1;
 
   *state->comms_ready = 0;
-
 
   // export all the variables for each stepper and pin
   for (int i = 0; i < STEPGENS; i++) {
@@ -290,35 +289,28 @@ int rtapi_app_main(void) {
 
   // Export functions
   char name[HAL_NAME_LEN + 1];
-  rtapi_snprintf(name, sizeof(name), "%s.update-freq", prefix);
-  int retval = hal_export_funct(name, update_freq, state, 1, 0, comp_id);
+  rtapi_snprintf(name, sizeof(name), "%s.uart-read", prefix);
+  int retval = hal_export_funct(name, uart_read, 0, 0, 0, comp_id);
   if (retval < 0) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: update function export failed\n", modname);
+    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: uart-read export failed\n", modname);
     hal_exit(comp_id);
     return -1;
   }
 
-  rtapi_snprintf(name, sizeof(name), "%s.uart-xfer", prefix);
-  retval = hal_export_funct(name, uart_xfer, 0, 0, 0, comp_id);
+  rtapi_snprintf(name, sizeof(name), "%s.uart-write", prefix);
+  retval = hal_export_funct(name, uart_write, 0, 0, 0, comp_id);
   if (retval < 0) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: uart-xfer function export failed\n", modname);
+    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: uart-write export failed\n", modname);
     hal_exit(comp_id);
     return -1;
   }
 
-
-
-  // Start non-RT init worker (explicit SCHED_OTHER, no affinity)
-  {
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
-    pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
-    int err = pthread_create(&init_thread, &attr, uart_init_worker, NULL);
-    pthread_attr_destroy(&attr);
-    if (err != 0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pthread_create failed: %d\n", modname, err);
-    }
+  // Spawn UART monitor thread (keeps /dev/ttyUSB0 open and healthy)
+  int thr = pthread_create(&uart_mon_tid, NULL, uart_monitor, NULL);
+  if (thr != 0) {
+    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pthread_create(uart_monitor) failed: %s\n", modname, strerror(thr));
+    hal_exit(comp_id);
+    return -1;
   }
 
   rtapi_print_msg(RTAPI_MSG_INFO, "%s: installed driver\n", modname);
@@ -326,16 +318,13 @@ int rtapi_app_main(void) {
   return 0;
 }
 
-
-
 void rtapi_app_exit(void) {
-  // Stop non-RT worker and clean up
-  pthread_mutex_lock(&init_mtx);
-  init_stop = 1;
-  pthread_cond_broadcast(&init_cv);
-  pthread_mutex_unlock(&init_mtx);
-  pthread_join(init_thread, NULL);
-
+  // Stop monitor thread
+  atomic_store_explicit(&mon_run, 0, memory_order_release);
+  if (uart_mon_tid) {
+    void *ret = NULL;
+    pthread_join(uart_mon_tid, &ret);
+  }
   if (uart_fd >= 0) {
     close(uart_fd);
     uart_fd = -1;
@@ -343,7 +332,7 @@ void rtapi_app_exit(void) {
   hal_exit(comp_id);
 }
 
-bool pin_err(const int retval) {
+static bool pin_err(const int retval) {
   if (retval < 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pin export failed with err=%i\n", modname, retval);
     hal_exit(comp_id);
@@ -440,87 +429,6 @@ static void stepgen_instance_position_control(stepper_state_t *s, const long l_p
   *new_vel = velocity_cmd;
 }
 
-void update_freq(void *arg, const long l_period_ns) {
-  state_t *state = arg;
-
-  // metrics: sliding servo timing window
-  if (*state->metrics_reset) {
-    *state->metric_frames_ok = 0;
-    *state->metric_bad_header = 0;
-    *state->metric_read_errors = 0;
-    *state->metric_write_errors = 0;
-  }
-  metrics_servo_tick(state, l_period_ns);
-
-  // loop through generators
-  for (int i = 0; i < STEPGENS; i++) {
-    stepper_state_t *s = &state->stepgens[i];
-
-    // first sanity-check our maxaccel and maxvel params
-    // maxvel must be >= 0.0, and may not be faster than 1 step per (steplen+stepspace) seconds
-
-    const double max_steps_per_s = (double)STEPGEN_FREQUENCY / 2.0;
-
-    // max vel supported by current step timings & position-scale
-    const double physical_maxvel = max_steps_per_s / fabs(s->hal.param.position_scale);
-    // physical_maxvel = force_precision(physical_maxvel);
-
-    if (s->hal.param.maxvel < 0.0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxvel < 0, setting to its absolute value\n", i);
-      s->hal.param.maxvel = fabs(s->hal.param.maxvel);
-    }
-
-    if (s->hal.param.maxvel > physical_maxvel) {
-      rtapi_print_msg(
-          RTAPI_MSG_ERR,
-          "stepgen.%02d.maxvel is too big for current step timings (%f steps/s) & position-scale (%f), clipping to "
-          "max possible (%f)\n",
-          i, max_steps_per_s, s->hal.param.position_scale, physical_maxvel);
-      s->hal.param.maxvel = physical_maxvel;
-    }
-
-    double maxvel;  // actual max vel to use this time
-
-    if (s->hal.param.maxvel == 0.0) {
-      maxvel = physical_maxvel;
-    } else {
-      maxvel = s->hal.param.maxvel;
-    }
-
-    // maxaccel may not be negative
-    if (s->hal.param.maxaccel < 0.0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxaccel < 0, setting to its absolute value\n", i);
-      s->hal.param.maxaccel = fabs(s->hal.param.maxaccel);
-    }
-
-    double new_vel;
-    // select the new velocity we want
-    if (*s->hal.pin.control_type == 0) {
-      stepgen_instance_position_control(s, l_period_ns, &new_vel);
-    } else {
-      // velocity-mode control is easy
-      new_vel = *s->hal.pin.velocity_cmd;
-      if (s->hal.param.maxaccel > 0.0) {
-        if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) > s->hal.param.maxaccel) {
-          new_vel = (*s->hal.pin.velocity_fb) + (s->hal.param.maxaccel * f_period_s);
-        } else if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) < -s->hal.param.maxaccel) {
-          new_vel = (*s->hal.pin.velocity_fb) - (s->hal.param.maxaccel * f_period_s);
-        }
-      }
-    }
-
-    // clip velocity to maxvel
-    if (new_vel > maxvel) {
-      new_vel = maxvel;
-    } else if (new_vel < -maxvel) {
-      new_vel = -maxvel;
-    }
-
-    *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
-
-    linuxcnc_state.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
-  }
-}
 
 static ssize_t write_exact(const int fd, const uint8_t *p, size_t n) {
   size_t off = 0;
@@ -578,7 +486,6 @@ static int uart_open_config(void) {
     rtapi_print_msg(RTAPI_MSG_ERR, "tcsetattr failed: %s\n", strerror(errno));
     close(fd);
 
-
     return -1;
   }
 
@@ -593,213 +500,257 @@ static int uart_open_config(void) {
   return 0;
 }
 
-static void uart_xfer() {
-  linuxcnc_state.header = PRU_DATA;  // PRU starts sending immediately upon seeing this header
-
-  for (int i = 0; i < STEPGENS; i++) {
-    const stepper_state_t *s = &state->stepgens[i];
-    if (*s->hal.pin.enable == 1) {
-      linuxcnc_state.stepgen_enable_mask |= 1 << i;
-    } else {
-      linuxcnc_state.stepgen_enable_mask &= ~(1 << i);
-    }
-  }
-
-  for (int i = 0; i < OUTPUT_VARS; i++) {
-    linuxcnc_state.output_vars[i] = (int32_t)*state->output_vars[i];
-  }
-
-  for (int i = 0; i < OUTPUT_PINS; i++) {
-    if (*state->outputs[i] == 1) {
-      linuxcnc_state.outputs |= 1 << i;
-    } else {
-      linuxcnc_state.outputs &= ~(1 << i);
-    }
-  }
-
-  if (*(state->comms_enable)) {
-    const int rising_edge = !last_comms_enable;
-    last_comms_enable = 1;
-
-    if (rising_edge) {
-      // Request open+init in non-RT worker and skip I/O this tick
-      pthread_mutex_lock(&init_mtx);
-      init_ready = 0;
-      init_request = 1;  // OPEN
-      pthread_cond_signal(&init_cv);
-      pthread_mutex_unlock(&init_mtx);
-      *state->comms_ready = 0;
-      *state->comms_status = 0;
-      return;
-    }
-
-    if (uart_fd < 0 || !init_ready) {
-      *state->comms_ready = 0;
-      *state->comms_status = 0;
-      return;
-    }
-
-    *state->comms_ready = 1;
-
-    // Write our frame (XFER_BUF_SIZE bytes) and read PRU's previous frame, measuring RTT
-    struct timespec rtt_t0, rtt_t1;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &rtt_t0);
-
-    ssize_t rcw = write_exact(uart_fd, linuxcnc_state.buffer, XFER_BUF_SIZE);
-    if (rcw < 0) {
-      (*state->metric_write_errors)++;
-      *state->comms_status = 0;
-      return;
-    }
-
-    ssize_t rcr = read_exact(uart_fd, pru_state.buffer, XFER_BUF_SIZE);
-    if (rcr < 0) {
-      (*state->metric_read_errors)++;
-      *state->comms_status = 0;
-      return;
-    }
-
-    clock_gettime(CLOCK_MONOTONIC_RAW, &rtt_t1);
-    uint64_t rtt_ns = (uint64_t)(rtt_t1.tv_sec - rtt_t0.tv_sec) * 1000000000ull + (uint64_t)(rtt_t1.tv_nsec - rtt_t0.tv_nsec);
-    int32_t rtt_us = (int32_t)((rtt_ns + 500ull) / 1000ull);
-    metrics_rtt_sample(state, rtt_us);
-
-    switch (pru_state.header) {
-      case PRU_DATA:
-        *state->comms_status = 1;
-
-        (*state->metric_frames_ok)++;
-
-        for (int i = 0; i < STEPGENS; i++) {
-          stepper_state_t *s = &state->stepgens[i];
-          const int64_t acc = pru_state.stepgen_feedback[i];
-
-          if (fabs(s->hal.param.position_scale) < 1e-6) {
-            if (s->hal.param.position_scale >= 0.0) {
-              s->hal.param.position_scale = 1.0;
-              rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
-            } else {
-              s->hal.param.position_scale = -1.0;
-              rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
-            }
-          }
-
-          int64_t acc_delta = (int64_t)((uint64_t)acc - (uint64_t)s->prev_step_position);
-          s->step_position += acc_delta;
-          if (*s->hal.pin.position_reset != 0) {
-            s->step_position = 0;
-          }
-          *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
-          s->prev_step_position = acc;
-        }
-
-        for (int i = 0; i < INPUT_VARS; i++) {
-          *state->input_vars[i] = pru_state.input_vars[i];
-        }
-        for (int i = 0; i < INPUT_PINS; i++) {
-          if ((pru_state.inputs & (1 << i)) != 0) {
-            *state->inputs[i] = 1;
-            *state->inputs[i + INPUT_PINS] = 0;
-          } else {
-            *state->inputs[i] = 0;
-            *state->inputs[i + INPUT_PINS] = 1;
-          }
-        }
-        break;
-      default:
-        *state->comms_status = 0;
-        (*state->metric_bad_header)++;
-
-        {
-          static uint64_t last_dump_ns = 0;
-          struct timespec tlog;
-          clock_gettime(CLOCK_MONOTONIC_RAW, &tlog);
-          uint64_t now_ns = (uint64_t)tlog.tv_sec * 1000000000ull + (uint64_t)tlog.tv_nsec;
-          if (now_ns - last_dump_ns > 1000000000ull) {
-            rtapi_print("Bad UART payload:");
-            for (int i = 0; i < XFER_BUF_SIZE; i++) rtapi_print(" %02x", pru_state.buffer[i]);
-            rtapi_print("\n");
-            last_dump_ns = now_ns;
-          }
-        }
-    }
-  } else {
-    *state->comms_ready = 0;
-    *state->comms_status = 0;
-    if (last_comms_enable) {
-      pthread_mutex_lock(&init_mtx);
-      init_request = 2;  // CLOSE
-      pthread_cond_signal(&init_cv);
-      pthread_mutex_unlock(&init_mtx);
-    }
-    last_comms_enable = 0;
-  }
-}
-
-
-
-// Non-RT worker: handles UART open/init and close outside the servo thread
-static void *uart_init_worker(void *arg) {
+static void uart_read(void *arg, long l_period_ns) {
   (void)arg;
-  // Keep worker thread off the RT core (pin to CPU 1)
-  cpu_set_t set; CPU_ZERO(&set);
-  int worker_cpu = 1;
-  CPU_SET(worker_cpu, &set);
-  (void)pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
-  for (;;) {
-    pthread_mutex_lock(&init_mtx);
-    while (!init_stop && init_request == 0) {
-      pthread_cond_wait(&init_cv, &init_mtx);
-    }
-    if (init_stop) {
-      pthread_mutex_unlock(&init_mtx);
-      break;
-    }
-    int req = init_request;
-    init_request = 0;
-    pthread_mutex_unlock(&init_mtx);
+  (void)l_period_ns;
 
-    if (req == 2) {  // close
-      if (uart_fd >= 0) {
-        close(uart_fd);
-        uart_fd = -1;
-      }
-      init_ready = 0;
-      continue;
-    }
+  // Comms disabled or UART not ready: clear status/handshake and skip
+  if (!*(state->comms_enable) || !*(state->comms_ready)) {
+    *state->comms_status = 0;
+    prime_pending = 0;
+    awaiting_reply = 0;
+    return;
+  }
 
-    if (req == 1) {  // open+init
-      init_ready = 0;
-      if (uart_fd >= 0) {
-        close(uart_fd);
-        uart_fd = -1;
-      }
-      if (uart_open_config() < 0) {
-        init_ready = 0;
-        continue;
-      }
-      // Pulse DTR/RTS low then high
-      int m;
-      if (ioctl(uart_fd, TIOCMGET, &m) == 0) {
-        m &= ~(TIOCM_DTR | TIOCM_RTS);
-        ioctl(uart_fd, TIOCMSET, &m);
-        m |= (TIOCM_DTR | TIOCM_RTS);
-        ioctl(uart_fd, TIOCMSET, &m);
-      }
-      // Flush both directions to drop any residue
+
+  // Reset rising edge: flush/drain residual; arm first write and skip this read
+  const int reset_edge = (*(state->comms_reset) && !last_comms_reset);
+  if (reset_edge) {
+    if (uart_fd >= 0) {
       tcflush(uart_fd, TCIOFLUSH);
-      // Aggressive drain of any residual bytes without blocking
       for (int it = 0; it < 8; ++it) {
         int avail = 0;
         if (ioctl(uart_fd, FIONREAD, &avail) < 0 || avail <= 0) break;
         uint8_t drop[256];
-        size_t chunk = (size_t)(avail < (int)sizeof(drop) ? avail : (int)sizeof(drop));
-        ssize_t r = read(uart_fd, drop, chunk);
+        ssize_t r = read(uart_fd, drop, avail < 256 ? avail : 256);
         if (r <= 0) break;
       }
-      init_ready = 1;
-      continue;
     }
+    prime_pending = 1;
+    awaiting_reply = 0;
+    *state->comms_status = 0;
+    return;
   }
+
+  // If link not yet established, only read when awaiting reply after a prime
+  if (!*state->comms_status && !awaiting_reply) return;
+
+  if (uart_fd < 0 || !atomic_load_explicit(&uart_healthy_flag, memory_order_acquire)) {
+    *state->comms_status = 0;
+    return;
+  }
+
+  // Read previous reply (blocking) and apply immediately
+  atomic_store_explicit(&uart_io_active, 1, memory_order_release);
+  ssize_t rr = read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
+  atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+  if (rr < 0) {
+    (*state->metric_read_errors)++;
+    *state->comms_status = 0;
+    awaiting_reply = 0;
+    return;
+  }
+  const pruState_t *rxp = &rx_frame;
+  if (rxp->header == PRU_DATA) {
+    *state->comms_status = 1;
+    awaiting_reply = 0;
+    (*state->metric_frames_ok)++;
+    for (int i = 0; i < STEPGENS; i++) {
+      stepper_state_t *s = &state->stepgens[i];
+      const int64_t acc = rxp->stepgen_feedback[i];
+      if (fabs(s->hal.param.position_scale) < 1e-6) {
+        if (s->hal.param.position_scale >= 0.0) {
+          s->hal.param.position_scale = 1.0;
+          rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
+        } else {
+          s->hal.param.position_scale = -1.0;
+          rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
+        }
+      }
+      int64_t acc_delta = (int64_t)((uint64_t)acc - (uint64_t)s->prev_step_position);
+      s->step_position += acc_delta;
+      if (*s->hal.pin.position_reset != 0) s->step_position = 0;
+      *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
+      s->prev_step_position = acc;
+    }
+    for (int i = 0; i < INPUT_VARS; i++) *state->input_vars[i] = rxp->input_vars[i];
+    for (int i = 0; i < INPUT_PINS; i++) {
+      if ((rxp->inputs & (1 << i)) != 0) {
+        *state->inputs[i] = 1;
+        *state->inputs[i + INPUT_PINS] = 0;
+      } else {
+        *state->inputs[i] = 0;
+        *state->inputs[i + INPUT_PINS] = 1;
+      }
+    }
+  } else {
+    *state->comms_status = 0;
+    awaiting_reply = 0;
+    (*state->metric_bad_header)++;
+  }
+}
+
+static void uart_write(void *arg, long l_period_ns) {
+  (void)arg;
+  (void)l_period_ns;
+  if (!*(state->comms_enable)) return;
+  if (!*(state->comms_ready)) return;
+  if (uart_fd < 0 || !atomic_load_explicit(&uart_healthy_flag, memory_order_acquire)) return;
+  // Servo metrics and stepgen command compute + build TX
+  if (*state->metrics_reset) {
+    *state->metric_frames_ok = 0;
+    *state->metric_bad_header = 0;
+    *state->metric_read_errors = 0;
+    *state->metric_write_errors = 0;
+  }
+  metrics_servo_tick(state, l_period_ns);
+
+  linuxCncState_t *txp = &tx_frame;
+  txp->header = PRU_DATA;
+  txp->stepgen_enable_mask = 0;
+  txp->outputs = 0;
+
+  // Compute per-stepper command, update feedback, and enable mask
+  for (int i = 0; i < STEPGENS; i++) {
+    stepper_state_t *s = &state->stepgens[i];
+
+    const double max_steps_per_s = (double)STEPGEN_FREQUENCY / 2.0;
+    const double physical_maxvel = max_steps_per_s / fabs(s->hal.param.position_scale);
+
+    if (s->hal.param.maxvel < 0.0) {
+      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxvel < 0, setting to its absolute value\n", i);
+      s->hal.param.maxvel = fabs(s->hal.param.maxvel);
+    }
+    if (s->hal.param.maxvel > physical_maxvel) {
+      rtapi_print_msg(RTAPI_MSG_ERR,
+        "stepgen.%02d.maxvel is too big for current step timings (%f steps/s) & position-scale (%f), clipping to max possible (%f)\n",
+        i, max_steps_per_s, s->hal.param.position_scale, physical_maxvel);
+      s->hal.param.maxvel = physical_maxvel;
+    }
+
+    double maxvel = (s->hal.param.maxvel == 0.0) ? physical_maxvel : s->hal.param.maxvel;
+
+    if (s->hal.param.maxaccel < 0.0) {
+      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxaccel < 0, setting to its absolute value\n", i);
+      s->hal.param.maxaccel = fabs(s->hal.param.maxaccel);
+    }
+
+    double new_vel;
+    if (*s->hal.pin.control_type == 0) {
+      stepgen_instance_position_control(s, l_period_ns, &new_vel);
+    } else {
+      new_vel = *s->hal.pin.velocity_cmd;
+      if (s->hal.param.maxaccel > 0.0) {
+        if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) > s->hal.param.maxaccel) {
+          new_vel = (*s->hal.pin.velocity_fb) + (s->hal.param.maxaccel * f_period_s);
+        } else if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) < -s->hal.param.maxaccel) {
+          new_vel = (*s->hal.pin.velocity_fb) - (s->hal.param.maxaccel * f_period_s);
+        }
+      }
+    }
+
+    if (new_vel > maxvel) new_vel = maxvel; else if (new_vel < -maxvel) new_vel = -maxvel;
+
+    *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
+    txp->stepgen_freq_command[i] = (int32_t)(new_vel * s->hal.param.position_scale);
+
+    if (*s->hal.pin.enable == 1) txp->stepgen_enable_mask |= 1 << i; else txp->stepgen_enable_mask &= ~(1 << i);
+  }
+
+  for (int i = 0; i < OUTPUT_VARS; i++) txp->output_vars[i] = (int32_t)*state->output_vars[i];
+  for (int i = 0; i < OUTPUT_PINS; i++) { if (*state->outputs[i] == 1) txp->outputs |= 1 << i; else txp->outputs &= ~(1 << i); }
+
+  int should_write = prime_pending || *state->comms_status;
+  if (!should_write) { last_comms_reset = *state->comms_reset; return; }
+
+  atomic_store_explicit(&uart_io_active, 1, memory_order_release);
+  ssize_t ww = write_exact(uart_fd, &tx_frame.buffer[0], XFER_BUF_SIZE);
+  atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+  if (ww < 0) {
+    (*state->metric_write_errors)++;
+    prime_pending = 0;
+    awaiting_reply = 0;
+  } else {
+    prime_pending = 0;
+    awaiting_reply = 1;
+  }
+  last_comms_reset = *state->comms_reset;
+}
+
+
+static void *uart_monitor(void *arg) {
+  (void)arg;
+  rtapi_print("UART monitor: start\n");
+  atomic_store_explicit(&mon_run, 1, memory_order_release);
+
+  for (;;) {
+    if (!atomic_load_explicit(&mon_run, memory_order_acquire)) break;
+
+    if (uart_fd < 0) {
+      // Try open
+      rtapi_print("UART: opening %s\n", UART_DEV);
+      if (uart_open_config() == 0) {
+        // Pulse DTR/RTS and flush/drain residual
+        int m;
+        if (ioctl(uart_fd, TIOCMGET, &m) == 0) {
+          m &= ~(TIOCM_DTR | TIOCM_RTS);
+          ioctl(uart_fd, TIOCMSET, &m);
+          m |= (TIOCM_DTR | TIOCM_RTS);
+          ioctl(uart_fd, TIOCMSET, &m);
+        }
+        tcflush(uart_fd, TCIOFLUSH);
+        // Drain any pending bytes
+        for (int it = 0; it < 8; ++it) { int avail = 0; if (ioctl(uart_fd, FIONREAD, &avail) < 0 || avail <= 0) break; uint8_t drop[256]; ssize_t r = read(uart_fd, drop, avail < 256 ? avail : 256); if (r <= 0) break; }
+        atomic_store_explicit(&uart_healthy_flag, 1, memory_order_release);
+        atomic_store_explicit(&uart_ready_flag, 1, memory_order_release);
+        if (state && state->comms_ready) *state->comms_ready = 1;
+        rtapi_print("UART: open ok fd=%d\n", uart_fd);
+      } else {
+        atomic_store_explicit(&uart_healthy_flag, 0, memory_order_release);
+        atomic_store_explicit(&uart_ready_flag, 0, memory_order_release);
+        if (state && state->comms_ready) *state->comms_ready = 0;
+        rtapi_print("UART: open failed (errno=%d %s)\n", errno, strerror(errno));
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 500 * 1000 * 1000 }; // 500ms
+        nanosleep(&ts, NULL);
+        continue;
+      }
+    } else {
+      // Health check
+      int healthy = 1;
+      int m;
+      if (ioctl(uart_fd, TIOCMGET, &m) < 0) healthy = 0;
+      struct pollfd p = { .fd = uart_fd, .events = POLLIN | POLLERR | POLLHUP | POLLNVAL, .revents = 0 };
+      int pr = poll(&p, 1, 0);
+      if (pr >= 0 && (p.revents & (POLLERR | POLLHUP | POLLNVAL))) healthy = 0;
+
+      int prev_ready = atomic_load_explicit(&uart_ready_flag, memory_order_acquire);
+      if (!healthy) {
+        if (prev_ready) rtapi_print("UART: unhealthy (revents=%#x), reopening\n", p.revents);
+        atomic_store_explicit(&uart_healthy_flag, 0, memory_order_release);
+        atomic_store_explicit(&uart_ready_flag, 0, memory_order_release);
+        if (state && state->comms_ready) *state->comms_ready = 0;
+        // Wait for servo I/O to quiesce
+        for (int i = 0; i < 50; ++i) { // up to ~50ms
+          if (!atomic_load_explicit(&uart_io_active, memory_order_acquire)) break;
+          struct timespec ts = { .tv_sec = 0, .tv_nsec = 1 * 1000 * 1000 };
+          nanosleep(&ts, NULL);
+        }
+        if (uart_fd >= 0) { rtapi_print("UART: closing fd=%d\n", uart_fd); close(uart_fd); uart_fd = -1; }
+        continue; // next loop will try reopen
+      } else {
+        if (!prev_ready) { // transitioned to healthy
+          atomic_store_explicit(&uart_healthy_flag, 1, memory_order_release);
+          atomic_store_explicit(&uart_ready_flag, 1, memory_order_release);
+          if (state && state->comms_ready) *state->comms_ready = 1;
+          rtapi_print("UART: healthy\n");
+        }
+      }
+    }
+
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 50 * 1000 * 1000 }; // 50ms
+    nanosleep(&ts, NULL);
+  }
+
+  rtapi_print("UART monitor: stop\n");
   return NULL;
 }
