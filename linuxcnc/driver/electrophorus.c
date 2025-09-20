@@ -271,10 +271,14 @@ int rtapi_app_main(void) {
     return -1;
   }
 
+
+
   rtapi_print_msg(RTAPI_MSG_INFO, "%s: installed driver\n", modname);
   hal_ready(comp_id);
   return 0;
 }
+
+
 
 void rtapi_app_exit(void) { hal_exit(comp_id); }
 
@@ -551,13 +555,17 @@ static void uart_xfer() {
   }
 
   if (*(state->comms_enable)) {
+    int rising_edge = !last_comms_enable;
+    struct timespec t0, t_open, t_dtr, t_flush, t_drain;
+    if (rising_edge) clock_gettime(CLOCK_MONOTONIC_RAW, &t0);
+
     if (uart_fd < 0 && uart_open_config() < 0) {
       *state->comms_status = 0;
       return;
     }
+    if (rising_edge) clock_gettime(CLOCK_MONOTONIC_RAW, &t_open);
 
     // On comms-enable rising edge: reset FTDI side quickly (no sleeps in servo thread)
-    int rising_edge = !last_comms_enable;
     last_comms_enable = 1;
     if (rising_edge) {
       int m;
@@ -567,9 +575,12 @@ static void uart_xfer() {
         ioctl(uart_fd, TIOCMSET, &m);
         m |= (TIOCM_DTR | TIOCM_RTS);
         ioctl(uart_fd, TIOCMSET, &m);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &t_dtr);
       }
       // Flush both directions to drop any residue
       tcflush(uart_fd, TCIOFLUSH);
+
+      clock_gettime(CLOCK_MONOTONIC_RAW, &t_flush);
 
       // Aggressive drain: drop any residual bytes from kernel queue without blocking
       {
@@ -581,6 +592,8 @@ static void uart_xfer() {
           size_t chunk = (size_t)(avail < (int)sizeof(drop) ? avail : (int)sizeof(drop));
           ssize_t r = read(uart_fd, drop, chunk);
           if (r > 0) {
+
+
             drops += (size_t)r;
           } else {
             break;
@@ -588,11 +601,22 @@ static void uart_xfer() {
         }
         if (drops) rtapi_print("UART drain dropped %zu bytes\n", drops);
       }
+
+      clock_gettime(CLOCK_MONOTONIC_RAW, &t_drain);
+      long long open_us  = (long long)(t_open.tv_sec  - t0.tv_sec)  * 1000000LL + (long long)(t_open.tv_nsec  - t0.tv_nsec)  / 1000LL;
+      long long dtr_us   = (long long)(t_dtr.tv_sec   - t_open.tv_sec) * 1000000LL + (long long)(t_dtr.tv_nsec   - t_open.tv_nsec) / 1000LL;
+      long long flush_us = (long long)(t_flush.tv_sec - t_dtr.tv_sec)  * 1000000LL + (long long)(t_flush.tv_nsec - t_dtr.tv_nsec) / 1000LL;
+      long long drain_us = (long long)(t_drain.tv_sec - t_flush.tv_sec) * 1000000LL + (long long)(t_drain.tv_nsec - t_flush.tv_nsec) / 1000LL;
+      long long total_us = (long long)(t_drain.tv_sec - t0.tv_sec)    * 1000000LL + (long long)(t_drain.tv_nsec - t0.tv_nsec)    / 1000LL;
+      rtapi_print_msg(RTAPI_MSG_ERR, "%s: UART enable init us: open=%lld dtr_rts=%lld flush=%lld drain=%lld total=%lld\n", modname, open_us, dtr_us, flush_us, drain_us, total_us);
+
     }
 
+
+
     // Write our frame (XFER_BUF_SIZE bytes) and read PRU's previous frame, measuring RTT
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &t0);
+    struct timespec rtt_t0, rtt_t1;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &rtt_t0);
 
     ssize_t rcw = write_exact(uart_fd, linuxcnc_state.buffer, XFER_BUF_SIZE);
     if (rcw < 0) {
@@ -608,8 +632,8 @@ static void uart_xfer() {
       return;
     }
 
-    clock_gettime(CLOCK_MONOTONIC_RAW, &t1);
-    uint64_t rtt_ns = (uint64_t)(t1.tv_sec - t0.tv_sec) * 1000000000ull + (uint64_t)(t1.tv_nsec - t0.tv_nsec);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &rtt_t1);
+    uint64_t rtt_ns = (uint64_t)(rtt_t1.tv_sec - rtt_t0.tv_sec) * 1000000000ull + (uint64_t)(rtt_t1.tv_nsec - rtt_t0.tv_nsec);
     int32_t rtt_us = (int32_t)((rtt_ns + 500ull) / 1000ull);
     metrics_rtt_sample(state, rtt_us);
 
