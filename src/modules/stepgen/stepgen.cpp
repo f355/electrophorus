@@ -1,7 +1,7 @@
 #include "stepgen.h"
 
 Stepgen::Stepgen(const int stepper_number, Pin* step_pin, Pin* dir_pin, const uint32_t ticker_frequency,
-                 const SerialComms* comms)
+                 SerialComms* comms)
     : comms(comms),
       stepper_number(stepper_number),
       stepper_enable_mask(1 << stepper_number),
@@ -67,7 +67,7 @@ void Stepgen::on_rx() {
   const float pos_mu = l->stepgen_position_cmd[this->stepper_number];
 
   // feedforward velocity in mu/s from consecutive host samples
-  const float T = this->comms->servo_period_s > 0.0f ? this->comms->servo_period_s : 0.00125f;
+  const float T = this->comms->get_servo_period_s() > 0.0f ? this->comms->get_servo_period_s() : 0.00125f;
   const float ff_vel_mu_s = (pos_mu - this->last_position_cmd_mu) / T;
 
   // accel-limit toward ff_vel

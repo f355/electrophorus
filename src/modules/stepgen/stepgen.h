@@ -6,7 +6,7 @@
 #include "serial_comms.h"
 
 class Stepgen final : public Module {
-  const SerialComms *comms;
+  SerialComms *comms;
   int stepper_number;
   int stepper_enable_mask;
 
@@ -26,7 +26,7 @@ class Stepgen final : public Module {
   float last_velocity_mu_s = 0.0f;
 
  public:
-  Stepgen(int stepper_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, const SerialComms *comms);
+  Stepgen(int stepper_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, SerialComms *comms);
 
   ~Stepgen() = default;
 

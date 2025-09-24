@@ -10,6 +10,7 @@
 
 #define PRU_DATA 0x61746164  // ASCII bytes on wire: 'd','a','t','a'
 #define PRU_CONF 0x666e6f63  // ASCII bytes on wire: 'c','o','n','f'
+#define PRU_READ 0x64616572  // ASCII bytes on wire: 'r','e','a','d'
 
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)

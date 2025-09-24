@@ -16,6 +16,8 @@
       "target.stdio-uart-tx": "P2_8",
       "target.stdio-uart-rx": "P2_9",
 
+      "app.same-tick-mode": 1,
+
     }
   }
 }

@@ -41,10 +41,17 @@ class SerialComms final {
   MODDMA_Config tx_dma_cfg;
   MODDMA_Config rx_dma_cfg;
 
+  // Same-tick support
+  enum class RxPhase : uint8_t { ExpectRead, ExpectCmd };
+  volatile RxPhase rx_phase = RxPhase::ExpectCmd;
+  volatile uint32_t read_token_storage = 0;
+  bool same_tick_mode = false;
+
   // Helpers
   void on_tx_dma_tc();
   void on_rx_dma_tc();
   void start_rx_dma_for_fill();
+  void start_rx_dma_read_token();
 
  public:
   SerialComms();
@@ -64,6 +71,8 @@ class SerialComms final {
   [[nodiscard]] volatile pruState_t* get_pru_state() const { return pru_state; }
 
   // Consume pending per-axis configuration (returns true if one was pending for this axis)
+  [[nodiscard]] float get_servo_period_s() const { return servo_period_s; }
+
   bool take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu);
 
   volatile uint32_t bad_header_count = 0;

@@ -1,8 +1,10 @@
 loadrt [KINS]KINEMATICS
 loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
 
-loadrt electrophorus
+loadrt electrophorus uart=/dev/ttyAMA0 baudrate=3000000
 loadrt estop_latch names=estop-latch
+
+setp carvera.same-tick-mode 1
 
 addf carvera.uart-read servo-thread
 addf motion-command-handler servo-thread

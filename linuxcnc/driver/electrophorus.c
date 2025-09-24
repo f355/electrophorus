@@ -34,6 +34,8 @@
 #include <poll.h>
 #include <stdatomic.h>
 
+#include <linux/serial.h>
+
 #include "hal.h"
 #include "protocol_definitions.h"
 #include "rtapi.h"
@@ -164,7 +166,40 @@ static int uart_fd = -1;
 
 #define UART_DEV "/dev/ttyUSB0"
 #define UART_BAUD 3000000
-static const char *uart_dev_path = UART_DEV;
+// Load-time module parameters
+static char *uart = NULL;               // e.g. /dev/ttyAMA0 or /dev/ttyUSB0
+RTAPI_MP_STRING(uart, "UART device path (e.g. /dev/ttyAMA0)");
+static int baudrate = UART_BAUD;        // e.g. 3000000
+RTAPI_MP_INT(baudrate, "UART baudrate (e.g. 3000000)");
+
+static const char *uart_dev_path = UART_DEV;  // set from module param in rtapi_app_main
+
+static speed_t baud_to_constant(int b) {
+  switch (b) {
+#ifdef B3000000
+    case 3000000: return B3000000;
+#endif
+#ifdef B2000000
+    case 2000000: return B2000000;
+#endif
+#ifdef B1500000
+    case 1500000: return B1500000;
+#endif
+#ifdef B1000000
+    case 1000000: return B1000000;
+#endif
+#ifdef B921600
+    case 921600:  return B921600;
+#endif
+#ifdef B460800
+    case 460800:  return B460800;
+#endif
+    case 230400:  return B230400;
+    case 115200:  return B115200;
+    default:      return B115200;
+  }
+}
+
 
 
 // Track comms-reset edge and prime/reply handshake across the split read/write
@@ -238,6 +273,10 @@ int rtapi_app_main(void) {
       return -1;
     *pin->velocity_fb = 0.0;
   }
+  // Apply load-time params for UART device and baudrate
+  uart_dev_path = (uart && uart[0]) ? uart : UART_DEV;
+  rtapi_print("UART: configured device=%s baud=%d\n", uart_dev_path, baudrate);
+
 
   for (int i = 0; i < OUTPUT_VARS; i++) {
     const char *output_var_names[OUTPUT_VARS] = OUTPUT_VAR_NAMES;
@@ -257,6 +296,7 @@ int rtapi_app_main(void) {
 
   for (int i = 0; i < OUTPUT_PINS; i++) {
     const outputPin_t output_pins[OUTPUT_PINS] = OUTPUT_PIN_DESC;
+
     if (pin_err(hal_pin_bit_newf(HAL_IN, &state->outputs[i], comp_id, "%s.output.%s", prefix, output_pins[i].name)))
       return -1;
     *state->outputs[i] = 0;
@@ -288,11 +328,6 @@ int rtapi_app_main(void) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: uart-read export failed\n", modname);
     hal_exit(comp_id);
     return -1;
-  }
-  const char *env_uart = getenv("CARVERA_UART_DEV");
-  if (env_uart && env_uart[0]) {
-    uart_dev_path = env_uart;
-    rtapi_print("UART: device override via CARVERA_UART_DEV=%s\n", uart_dev_path);
   }
 
 
@@ -391,8 +426,9 @@ static int uart_open_config(void) {
   tio.c_cc[VMIN] = XFER_BUF_SIZE;  // block until 62 bytes are available
   tio.c_cc[VTIME] = 0;             // no interbyte timeout
 
-  cfsetispeed(&tio, B3000000);
-  cfsetospeed(&tio, B3000000);
+  speed_t spd = baud_to_constant(baudrate);
+  cfsetispeed(&tio, spd);
+  cfsetospeed(&tio, spd);
 
   if (tcsetattr(fd, TCSANOW, &tio) < 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "tcsetattr failed: %s\n", strerror(errno));
@@ -400,6 +436,19 @@ static int uart_open_config(void) {
 
     return -1;
   }
+  // Try to enable low-latency mode where supported (harmless if unsupported)
+#ifdef TIOCGSERIAL
+  do {
+    struct serial_struct ser;
+    if (ioctl(fd, TIOCGSERIAL, &ser) == 0) {
+#ifdef ASYNC_LOW_LATENCY
+      ser.flags |= ASYNC_LOW_LATENCY;
+#endif
+      (void)ioctl(fd, TIOCSSERIAL, &ser);
+    }
+  } while (0);
+#endif
+
 
   // Flush any stale RX bytes before first use
   tcflush(fd, TCIFLUSH);
@@ -426,7 +475,7 @@ static void uart_read(void *arg, long l_period_ns) {
   }
 
 
-  // Reset rising edge: flush/drain residual; arm first write and skip this read
+  // Reset rising edge: flush/drain residual and schedule PRU_CONF on first write
   const int reset_edge = (*(state->comms_reset) && !last_comms_reset);
   if (reset_edge) {
     if (uart_fd >= 0) {
@@ -439,31 +488,44 @@ static void uart_read(void *arg, long l_period_ns) {
         if (r <= 0) break;
       }
     }
-    prime_pending = 1;
+    prime_pending = 1;            // allow first end-of-tick write
     awaiting_reply = 0;
-    config_pending = 1;  // schedule PRU_CONF send on first write
+    config_pending = 1;           // send PRU_CONF at end of this tick
     *state->comms_status = 0;
-    return;
+    // do not return; in same-tick mode we can still do a fresh read now
   }
-
-  // If link not yet established, only read when awaiting reply after a prime
-  if (!*state->comms_status && !awaiting_reply) return;
 
   if (uart_fd < 0 || !atomic_load_explicit(&uart_healthy_flag, memory_order_acquire)) {
     *state->comms_status = 0;
     return;
   }
 
-  // Read previous reply (blocking) and apply immediately
-  atomic_store_explicit(&uart_io_active, 1, memory_order_release);
-  ssize_t rr = read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
-  atomic_store_explicit(&uart_io_active, 0, memory_order_release);
-  if (rr < 0) {
-    (*state->metric_read_errors)++;
-    *state->comms_status = 0;
-    awaiting_reply = 0;
-    return;
+  if (state->same_tick_mode) {
+    // Same-tick fresh read: send PRU_READ trigger and read reply immediately
+    int32_t read_token = (int32_t)PRU_READ;
+    atomic_store_explicit(&uart_io_active, 1, memory_order_release);
+    ssize_t w4 = write_exact(uart_fd, &read_token, 4);
+    ssize_t rr = (w4 < 0) ? -1 : read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
+    atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+    if (rr < 0) {
+      (*state->metric_read_errors)++;
+      *state->comms_status = 0;
+      return;
+    }
+  } else {
+    // Pipelined: only read when awaiting reply after a prime or once link is up
+    if (!*state->comms_status && !awaiting_reply) return;
+    atomic_store_explicit(&uart_io_active, 1, memory_order_release);
+    ssize_t rr = read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
+    atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+    if (rr < 0) {
+      (*state->metric_read_errors)++;
+      *state->comms_status = 0;
+      awaiting_reply = 0;
+      return;
+    }
   }
+
   const pruState_t *rxp = &rx_frame;
   if (rxp->header == PRU_DATA) {
     *state->comms_status = 1;
