@@ -51,23 +51,47 @@ void Stepgen::make_steps() {
 }
 
 void Stepgen::on_rx() {
+  // Apply pending configuration first, even if the axis is disabled
+  float sc = 0.0f, ac = 0.0f, ip = 0.0f;
+  if (this->comms->take_stepgen_conf(this->stepper_number, &sc, &ac, &ip)) {
+    this->position_scale = sc;
+    this->max_accel = ac;
+    this->step_position = static_cast<int64_t>((double)ip * (double)sc * (double)FIXED_ONE);
+    // publish updated position immediately so host sees correct initial position
+    this->comms->get_pru_state()->stepgen_feedback[stepper_number] = this->step_position;
+  }
+
   const auto* l = this->comms->get_linuxcnc_state();
   if ((l->stepgen_enable_mask & this->stepper_enable_mask) == 0) return;  // disabled
 
-  const float cmd = l->stepgen_freq_command[this->stepper_number];
-  if (this->last_commanded_frequency == cmd) return;  // no change
+  const float pos_mu = l->stepgen_position_cmd[this->stepper_number];
 
-  // the commanded frequency has changed, recalculate the increment
-  this->last_commanded_frequency = cmd;
-  this->increment =
-      static_cast<int64_t>(this->last_commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
+  // feedforward velocity in mu/s from consecutive host samples
+  const float T = this->comms->servo_period_s > 0.0f ? this->comms->servo_period_s : 0.00125f;
+  const float ff_vel_mu_s = (pos_mu - this->last_position_cmd_mu) / T;
 
-  // The sign of the increment indicates the desired direction
+  // accel-limit toward ff_vel
+  float target_vel = ff_vel_mu_s;
+  if (this->max_accel > 0.0f) {
+    const float dv_max = this->max_accel * T;
+    const float dv = target_vel - this->last_velocity_mu_s;
+    if (dv > dv_max) target_vel = this->last_velocity_mu_s + dv_max;
+    else if (dv < -dv_max) target_vel = this->last_velocity_mu_s - dv_max;
+  }
+
+  // convert to steps/s and then to fixed-point increment per stepgen tick
+  const float steps_per_s = target_vel * this->position_scale;
+  this->increment = static_cast<int64_t>(steps_per_s * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
+
+  // Update direction on change
   if (const bool is_forward = increment > 0; this->current_dir != is_forward) {
     this->current_dir = is_forward;
     this->dir_flipped = true;
     this->dir_pin->set(is_forward);
   }
+
+  this->last_position_cmd_mu = pos_mu;
+  this->last_velocity_mu_s = target_vel;
 }
 
 bool Stepgen::listens_to_rx() { return true; }

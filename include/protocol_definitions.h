@@ -9,6 +9,7 @@
 // accessing scalars via the buffer[] view.
 
 #define PRU_DATA 0x61746164  // ASCII bytes on wire: 'd','a','t','a'
+#define PRU_CONF 0x666e6f63  // ASCII bytes on wire: 'c','o','n','f'
 
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)
@@ -22,17 +23,29 @@
 // Always TX/RX exactly XFER_BUF_SIZE bytes.
 #define XFER_BUF_SIZE 62
 
-// struct for LinuxCNC -> PRU communication
+// struct for LinuxCNC -> PRU communication (motion/data frames)
 typedef union {
   uint8_t buffer[XFER_BUF_SIZE];
   struct {
     int32_t header;
-    float stepgen_freq_command[STEPGENS];
+    float stepgen_position_cmd[STEPGENS];  // machine units
     int32_t output_vars[OUTPUT_VARS];
     uint8_t stepgen_enable_mask;
     uint16_t outputs;
   };
 } linuxCncState_t;
+
+// struct for LinuxCNC -> PRU configuration (one-shot on link/reset)
+typedef union {
+  uint8_t buffer[XFER_BUF_SIZE];
+  struct {
+    int32_t header;
+    float stepper_init_position[STEPGENS];     // machine units
+    float stepper_max_accel[STEPGENS];         // mu/s^2
+    float stepper_position_scale[STEPGENS];    // steps per mu
+    float servo_period_s;                      // host servo period (seconds)
+  };
+} linuxCncConf_t;
 
 // struct for PRU -> LinuxCNC communication
 typedef union {

@@ -14,9 +14,16 @@ class Stepgen final : public Module {
   volatile bool dir_flipped = false;  // indicates that the direction has changed
   bool current_dir = true;            // direction on last iteration, used for dir setup
   bool is_stepping = false;           // true if the step pin is held high
-  float last_commanded_frequency = 0;
   int64_t step_position;
   volatile int64_t increment = 0;
+
+  // Pending/active configuration
+  float position_scale = 1.0f;  // steps per machine unit
+  float max_accel = 0.0f;       // mu/s^2
+
+  // Position-control state
+  float last_position_cmd_mu = 0.0f;
+  float last_velocity_mu_s = 0.0f;
 
  public:
   Stepgen(int stepper_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, const SerialComms *comms);

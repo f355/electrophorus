@@ -1,6 +1,5 @@
 # 0/X
 setp carvera.stepgen.x.position-scale [JOINT_0]SCALE
-setp carvera.stepgen.x.maxvel [JOINT_0]STEPGEN_MAXVEL
 setp carvera.stepgen.x.maxaccel [JOINT_0]STEPGEN_MAXACCEL
 
 net joint.x.position-cmd joint.0.motor-pos-cmd => carvera.stepgen.x.position-cmd
@@ -11,7 +10,6 @@ net joint.x.home carvera.input.endstop-x => joint.0.home-sw-in => joint.0.pos-li
 
 # 1/Y
 setp carvera.stepgen.y.position-scale [JOINT_1]SCALE
-setp carvera.stepgen.y.maxvel [JOINT_1]STEPGEN_MAXVEL
 setp carvera.stepgen.y.maxaccel [JOINT_1]STEPGEN_MAXACCEL
 
 net joint.y.position-cmd joint.1.motor-pos-cmd => carvera.stepgen.y.position-cmd
@@ -22,7 +20,6 @@ net joint.y.home carvera.input.endstop-y => joint.1.home-sw-in => joint.1.pos-li
 
 # 2/Z
 setp carvera.stepgen.z.position-scale [JOINT_2]SCALE
-setp carvera.stepgen.z.maxvel [JOINT_2]STEPGEN_MAXVEL
 setp carvera.stepgen.z.maxaccel [JOINT_2]STEPGEN_MAXACCEL
 
 net joint.z.position-cmd joint.2.motor-pos-cmd => carvera.stepgen.z.position-cmd

@@ -10,7 +10,7 @@ static constexpr uint32_t UART_FCR_RX_FIFO_RST = (1u << 1);
 static constexpr uint32_t UART_FCR_TX_FIFO_RST = (1u << 2);
 
 SerialComms::SerialComms() {
-  serial = new UnbufferedSerial(P2_8, P2_9, UART_BAUD);
+  serial = new UnbufferedSerial(P0_2, P0_3, UART_BAUD);
   serial->format(8, SerialBase::None, 1);
 
   tx_buf[0].header = PRU_DATA;
@@ -19,7 +19,7 @@ SerialComms::SerialComms() {
   linuxcnc_state = &rx_buf[rx_ready_idx];
   pru_state = &tx_buf[tx_fill_idx];
 
-  uart = LPC_UART2;
+  uart = LPC_UART0;
 
   // Enable FIFO and reset RX/TX (write-only FCR)
   uart->FCR = UART_FCR_FIFO_EN | UART_FCR_RX_FIFO_RST | UART_FCR_TX_FIFO_RST;
@@ -44,17 +44,30 @@ void SerialComms::on_tx_dma_tc() {
 void SerialComms::start_rx_dma_for_fill() {
   rx_dma_cfg.channelNum(MODDMA::Channel_1)
       ->transferType(MODDMA::p2m)
-      ->srcConn(MODDMA::UART2_Rx)
+      ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[0]))
       ->transferSize(XFER_BUF_SIZE)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
   dma.Prepare(&rx_dma_cfg);
 }
+bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {
+  const uint32_t mask = (1u << axis);
+  if (!(conf_pending_mask & mask)) return false;
+  core_util_critical_section_enter();
+  *pos_scale = conf_position_scale[axis];
+  *maxaccel = conf_max_accel[axis];
+  *init_pos_mu = conf_init_pos_mu[axis];
+  conf_pending_mask &= ~mask;
+  core_util_critical_section_exit();
+  return true;
+}
+
 
 void SerialComms::on_rx_dma_tc() {
   dma.clearTcIrq();
 
-  bool valid = (rx_buf[rx_fill_idx].header == PRU_DATA);
+  const bool valid = (rx_buf[rx_fill_idx].header == PRU_DATA);
+  const bool is_conf = (rx_buf[rx_fill_idx].header == PRU_CONF);
 
   // Start TX of the previous reply via DMA (once per slot)
   if (!tx_in_progress) {
@@ -72,7 +85,7 @@ void SerialComms::on_rx_dma_tc() {
     tx_dma_cfg.channelNum(MODDMA::Channel_0)
         ->transferType(MODDMA::m2p)
         ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]))
-        ->dstConn(MODDMA::UART2_Tx)
+        ->dstConn(MODDMA::UART0_Tx)
         ->transferSize(XFER_BUF_SIZE)
         ->attach_tc(this, &SerialComms::on_tx_dma_tc);
     dma.Prepare(&tx_dma_cfg);
@@ -90,6 +103,17 @@ void SerialComms::on_rx_dma_tc() {
     rx_fill_idx = ready_idx ^ 1u;
     this->data_ready_callback();
   } else {
+    // Config frame? Capture values and expose for modules to consume on next on_rx.
+    if (is_conf) {
+      const volatile linuxCncConf_t* c = reinterpret_cast<volatile linuxCncConf_t*>(&rx_buf[rx_fill_idx]);
+      for (int i = 0; i < STEPGENS; ++i) {
+        conf_position_scale[i] = c->stepper_position_scale[i];
+        conf_max_accel[i] = c->stepper_max_accel[i];
+        conf_init_pos_mu[i] = c->stepper_init_position[i];
+      }
+      servo_period_s = c->servo_period_s;
+      conf_pending_mask = (STEPGENS >= 32) ? 0xFFFFFFFFu : ((1u << STEPGENS) - 1u);
+    }
     // keep cadence without publishing new state
     this->data_ready_callback();
     // rotate fill buffer anyway to avoid overwriting same slot repeatedly

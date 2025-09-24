@@ -7,7 +7,7 @@
 #include "protocol_definitions.h"
 
 class SerialComms final {
-  // UART2 on LPC1768: TX=P2_8, RX=P2_9 (configured via UnbufferedSerial)
+  // UART0 on LPC1768: TX=P0_2, RX=P0_3 (configured via UnbufferedSerial)
   mbed::UnbufferedSerial* serial;
 
   // Underlying UART base (can be reassigned to UART3, etc.)
@@ -20,6 +20,13 @@ class SerialComms final {
   // Public pointers to current buffers for const getter compatibility
   volatile linuxCncState_t* linuxcnc_state = nullptr;
   volatile pruState_t* pru_state = nullptr;
+
+  // Pending configuration from host (per-axis)
+  volatile float conf_position_scale[STEPGENS] = {};
+  volatile float conf_max_accel[STEPGENS] = {};
+  volatile float conf_init_pos_mu[STEPGENS] = {};
+  volatile float servo_period_s = 0.00125f; // default 800 Hz
+  volatile uint32_t conf_pending_mask = 0;
 
   // Indices and counters
   volatile uint8_t rx_fill_idx = 0;
@@ -55,6 +62,9 @@ class SerialComms final {
   // Expose current buffers to other modules/ISRs
   [[nodiscard]] volatile linuxCncState_t* get_linuxcnc_state() const { return linuxcnc_state; }
   [[nodiscard]] volatile pruState_t* get_pru_state() const { return pru_state; }
+
+  // Consume pending per-axis configuration (returns true if one was pending for this axis)
+  bool take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu);
 
   volatile uint32_t bad_header_count = 0;
   volatile uint32_t tx_frames = 0;

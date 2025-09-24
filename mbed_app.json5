@@ -12,6 +12,10 @@
       },
       "target.c_lib": "std",
       "platform.stdio-baud-rate": 115200,
+      "target.stdio-uart": "UART_2",
+      "target.stdio-uart-tx": "P2_8",
+      "target.stdio-uart-rx": "P2_9",
+
     }
   }
 }

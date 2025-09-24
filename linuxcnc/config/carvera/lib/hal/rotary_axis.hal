@@ -1,5 +1,4 @@
 setp carvera.stepgen.a.position-scale [JOINT_3]SCALE
-setp carvera.stepgen.a.maxvel [JOINT_3]STEPGEN_MAXVEL
 setp carvera.stepgen.a.maxaccel [JOINT_3]STEPGEN_MAXACCEL
 
 net joint.a.position-cmd joint.3.motor-pos-cmd => carvera.stepgen.a.position-cmd

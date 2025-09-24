@@ -52,24 +52,17 @@ typedef struct {
   struct {
     struct {
       hal_float_t *position_cmd;  // in: position command (position units)
-      hal_float_t *velocity_cmd;  // in: velocity command
       hal_float_t *position_fb;   // out: position feedback (position units)
       hal_float_t *velocity_fb;   // out: velocity feedback
       hal_bit_t *enable;          // is the stepper enabled?
-      hal_bit_t *control_type;    // 0="position control", 1="velocity control"
       hal_bit_t *position_reset;  // reset position when true
     } pin;
 
     struct {
       hal_float_t position_scale;  // steps per position unit
-      hal_float_t maxvel;          // max velocity, (pos units/sec)
       hal_float_t maxaccel;        // max accel (pos units/sec^2)
     } param;
   } hal;
-
-  // this variable holds the previous position command, for
-  // computing the feedforward velocity
-  hal_float_t old_position_cmd;
 
   int64_t prev_step_position;
   int64_t step_position;
@@ -83,6 +76,9 @@ typedef struct {
   hal_bit_t *comms_status;  // out: will go low if the comms are not working for some reason
 
   hal_bit_t *comms_ready;  // out: goes high when UART is opened/initialized
+
+  // HAL param: enable experimental same-tick mode on host side (no behavior change yet)
+  hal_bit_t same_tick_mode;
 
   hal_float_t *output_vars[OUTPUT_VARS];  // output variables: PWM controls, etc.
   hal_float_t *input_vars[INPUT_VARS];    // input variables: thermistors, pulse counters, etc.
@@ -162,16 +158,20 @@ static _Atomic int uart_io_active = 0;    // 1 while servo read/write is in prog
 static void *uart_monitor(void *arg);
 
 static ssize_t read_exact(int fd, uint8_t *p, size_t n);
+
 static ssize_t write_exact(int fd, const uint8_t *p, size_t n);
 static int uart_fd = -1;
 
 #define UART_DEV "/dev/ttyUSB0"
 #define UART_BAUD 3000000
+static const char *uart_dev_path = UART_DEV;
+
 
 // Track comms-reset edge and prime/reply handshake across the split read/write
 static int last_comms_reset = 0;
 static int prime_pending = 0;      // allow first write on reset edge
 static int awaiting_reply = 0;     // force next read even while status==0
+static int config_pending = 0;     // send PRU_CONF once after reset/open
 
 
 int rtapi_app_main(void) {
@@ -192,6 +192,9 @@ int rtapi_app_main(void) {
 
   if (pin_err(hal_pin_bit_newf(HAL_IN, &state->comms_enable, comp_id, "%s.comms-enable", prefix))) return -1;
   if (pin_err(hal_pin_bit_newf(HAL_IN, &state->comms_reset, comp_id, "%s.comms-reset", prefix))) return -1;
+  if (pin_err(hal_param_bit_newf(HAL_RW, &state->same_tick_mode, comp_id, "%s.same-tick-mode", prefix))) return -1;
+  state->same_tick_mode = 0;
+
   if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->comms_status, comp_id, "%s.comms-status", prefix))) return -1;
   if (metrics_export_pins(comp_id, prefix, state) < 0) return -1;
   if (pin_err(hal_pin_bit_newf(HAL_OUT, &state->comms_ready, comp_id, "%s.comms-ready", prefix))) return -1;
@@ -212,9 +215,6 @@ int rtapi_app_main(void) {
       return -1;
     par->position_scale = 1.0;
 
-    if (pin_err(hal_param_float_newf(HAL_RW, &par->maxvel, comp_id, "%s.stepgen.%s.maxvel", prefix, name))) return -1;
-    par->maxvel = 0.0;
-
     if (pin_err(hal_param_float_newf(HAL_RW, &par->maxaccel, comp_id, "%s.stepgen.%s.maxaccel", prefix, name)))
       return -1;
     par->maxaccel = 1.0;
@@ -223,19 +223,12 @@ int rtapi_app_main(void) {
 
     if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->enable, comp_id, "%s.stepgen.%s.enable", prefix, name))) return -1;
 
-    if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->control_type, comp_id, "%s.stepgen.%s.control-type", prefix, name)))
-      return -1;
-
     if (pin_err(hal_pin_bit_newf(HAL_IN, &pin->position_reset, comp_id, "%s.stepgen.%s.position-reset", prefix, name)))
       return -1;
 
     if (pin_err(hal_pin_float_newf(HAL_IN, &pin->position_cmd, comp_id, "%s.stepgen.%s.position-cmd", prefix, name)))
       return -1;
     *pin->position_cmd = 0.0;
-
-    if (pin_err(hal_pin_float_newf(HAL_IN, &pin->velocity_cmd, comp_id, "%s.stepgen.%s.velocity-cmd", prefix, name)))
-      return -1;
-    *pin->velocity_cmd = 0.0;
 
     if (pin_err(hal_pin_float_newf(HAL_OUT, &pin->position_fb, comp_id, "%s.stepgen.%s.position-fb", prefix, name)))
       return -1;
@@ -296,6 +289,12 @@ int rtapi_app_main(void) {
     hal_exit(comp_id);
     return -1;
   }
+  const char *env_uart = getenv("CARVERA_UART_DEV");
+  if (env_uart && env_uart[0]) {
+    uart_dev_path = env_uart;
+    rtapi_print("UART: device override via CARVERA_UART_DEV=%s\n", uart_dev_path);
+  }
+
 
   rtapi_snprintf(name, sizeof(name), "%s.uart-write", prefix);
   retval = hal_export_funct(name, uart_write, 0, 0, 0, comp_id);
@@ -341,93 +340,6 @@ static bool pin_err(const int retval) {
   return false;
 }
 
-static void stepgen_instance_position_control(stepper_state_t *s, const long l_period_ns, double *new_vel) {
-  // calculate feed-forward velocity in machine units per second
-  const double ff_vel = (*s->hal.pin.position_cmd - s->old_position_cmd) / f_period_s;
-
-  s->old_position_cmd = *s->hal.pin.position_cmd;
-
-  const double velocity_error = *s->hal.pin.velocity_fb - ff_vel;
-
-  // Do we need to change speed to match the speed of position-cmd?
-  // If maxaccel is 0, there's no accel limit: fix this velocity error
-  // by the next servo period!  This leaves acceleration control up to
-  // the trajectory planner.
-  // If maxaccel is not zero, the user has specified a maxaccel and we
-  // adhere to that.
-  double match_accel;
-  if (velocity_error > 0.0) {
-    if (s->hal.param.maxaccel == 0) {
-      match_accel = -velocity_error / f_period_s;
-    } else {
-      match_accel = -s->hal.param.maxaccel;
-    }
-  } else if (velocity_error < 0.0) {
-    if (s->hal.param.maxaccel == 0) {
-      match_accel = velocity_error / f_period_s;
-    } else {
-      match_accel = s->hal.param.maxaccel;
-    }
-  } else {
-    match_accel = 0;
-  }
-
-  double seconds_to_vel_match;
-  if (match_accel == 0) {
-    // vel is just right, dont need to accelerate
-    seconds_to_vel_match = 0.0;
-  } else {
-    seconds_to_vel_match = -velocity_error / match_accel;
-  }
-  //*s->hal.pin.dbg_s_to_match = seconds_to_vel_match;
-
-  // compute expected position at the time of velocity match
-  // Note: this is "feedback position at the beginning of the servo period after we attain velocity match"
-  double position_at_match;
-  {
-    double avg_v = (ff_vel + *s->hal.pin.velocity_fb) * 0.5;
-    position_at_match = *s->hal.pin.position_fb + avg_v * (seconds_to_vel_match + f_period_s);
-  }
-
-  // Note: this assumes that position-cmd keeps the current velocity
-  const double position_cmd_at_match = *s->hal.pin.position_cmd + ff_vel * seconds_to_vel_match;
-  const double error_at_match = position_at_match - position_cmd_at_match;
-
-  //*s->hal.pin.dbg_err_at_match = error_at_match;
-
-  double velocity_cmd;
-  if (seconds_to_vel_match < f_period_s) {
-    // we can match velocity in one period
-    // try to correct whatever position error we have
-    velocity_cmd = ff_vel - (0.5 * error_at_match / f_period_s);
-
-    // apply accel limits?
-    if (s->hal.param.maxaccel > 0) {
-      if (velocity_cmd > *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s) {
-        velocity_cmd = *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s;
-      } else if (velocity_cmd < *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s) {
-        velocity_cmd = *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s;
-      }
-    }
-
-  } else {
-    // we're going to have to work for more than one period to match velocity
-
-    // calculate change in final position if we ramp in the opposite direction for one period
-    const double dv = -2.0 * match_accel * f_period_s;
-    const double dp = dv * seconds_to_vel_match;
-
-    // decide which way to ramp
-    if (fabs(error_at_match + dp * 2.0) < fabs(error_at_match)) {
-      match_accel = -match_accel;
-    }
-
-    // and do it
-    velocity_cmd = *s->hal.pin.velocity_fb + match_accel * f_period_s;
-  }
-
-  *new_vel = velocity_cmd;
-}
 
 
 static ssize_t write_exact(const int fd, const uint8_t *p, size_t n) {
@@ -458,9 +370,9 @@ static ssize_t read_exact(const int fd, uint8_t *p, size_t n) {
 
 static int uart_open_config(void) {
   if (uart_fd >= 0) return 0;
-  const int fd = open(UART_DEV, O_RDWR | O_NOCTTY);
+  const int fd = open(uart_dev_path, O_RDWR | O_NOCTTY);
   if (fd < 0) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "failed to open %s: %s\n", UART_DEV, strerror(errno));
+    rtapi_print_msg(RTAPI_MSG_ERR, "failed to open %s: %s\n", uart_dev_path, strerror(errno));
     return -1;
   }
 
@@ -509,6 +421,7 @@ static void uart_read(void *arg, long l_period_ns) {
     *state->comms_status = 0;
     prime_pending = 0;
     awaiting_reply = 0;
+    config_pending = 0;
     return;
   }
 
@@ -528,6 +441,7 @@ static void uart_read(void *arg, long l_period_ns) {
     }
     prime_pending = 1;
     awaiting_reply = 0;
+    config_pending = 1;  // schedule PRU_CONF send on first write
     *state->comms_status = 0;
     return;
   }
@@ -571,6 +485,11 @@ static void uart_read(void *arg, long l_period_ns) {
       s->step_position += acc_delta;
       if (*s->hal.pin.position_reset != 0) s->step_position = 0;
       *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
+      // velocity_fb from accumulator delta over host servo period
+      double steps = (double)acc_delta / (double)FIXED_ONE;
+      double vel_steps_s = steps / f_period_s;
+      double vel_mu_s = vel_steps_s / s->hal.param.position_scale;
+      *s->hal.pin.velocity_fb = (hal_float_t)vel_mu_s;
       s->prev_step_position = acc;
     }
     for (int i = 0; i < INPUT_VARS; i++) *state->input_vars[i] = rxp->input_vars[i];
@@ -605,55 +524,44 @@ static void uart_write(void *arg, long l_period_ns) {
   }
   metrics_servo_tick(state, l_period_ns);
 
+  // If a configuration packet is pending, send it first and skip building PRU_DATA this tick
+  if (config_pending) {
+    linuxCncConf_t conf = {0};
+    conf.header = PRU_CONF;
+    for (int i = 0; i < STEPGENS; i++) {
+      stepper_state_t *s = &state->stepgens[i];
+      conf.stepper_position_scale[i] = (float)s->hal.param.position_scale;
+      conf.stepper_max_accel[i] = (float)s->hal.param.maxaccel;
+      conf.stepper_init_position[i] = (float)(*s->hal.pin.position_cmd);
+    }
+    conf.servo_period_s = (float)f_period_s;
+
+    atomic_store_explicit(&uart_io_active, 1, memory_order_release);
+    ssize_t ww = write_exact(uart_fd, &conf.buffer[0], XFER_BUF_SIZE);
+    atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+    if (ww < 0) {
+      (*state->metric_write_errors)++;
+      // keep config_pending set to retry next tick
+      prime_pending = 0;
+      awaiting_reply = 0;
+    } else {
+      config_pending = 0;
+      prime_pending = 0;
+      awaiting_reply = 1;
+    }
+    last_comms_reset = *state->comms_reset;
+    return;
+  }
+
   linuxCncState_t *txp = &tx_frame;
   txp->header = PRU_DATA;
   txp->stepgen_enable_mask = 0;
   txp->outputs = 0;
 
-  // Compute per-stepper command, update feedback, and enable mask
+  // Pass-through per-axis commanded position, and update enable mask
   for (int i = 0; i < STEPGENS; i++) {
     stepper_state_t *s = &state->stepgens[i];
-
-    const double max_steps_per_s = (double)STEPGEN_FREQUENCY / 2.0;
-    const double physical_maxvel = max_steps_per_s / fabs(s->hal.param.position_scale);
-
-    if (s->hal.param.maxvel < 0.0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxvel < 0, setting to its absolute value\n", i);
-      s->hal.param.maxvel = fabs(s->hal.param.maxvel);
-    }
-    if (s->hal.param.maxvel > physical_maxvel) {
-      rtapi_print_msg(RTAPI_MSG_ERR,
-        "stepgen.%02d.maxvel is too big for current step timings (%f steps/s) & position-scale (%f), clipping to max possible (%f)\n",
-        i, max_steps_per_s, s->hal.param.position_scale, physical_maxvel);
-      s->hal.param.maxvel = physical_maxvel;
-    }
-
-    double maxvel = (s->hal.param.maxvel == 0.0) ? physical_maxvel : s->hal.param.maxvel;
-
-    if (s->hal.param.maxaccel < 0.0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "stepgen.%02d.maxaccel < 0, setting to its absolute value\n", i);
-      s->hal.param.maxaccel = fabs(s->hal.param.maxaccel);
-    }
-
-    double new_vel;
-    if (*s->hal.pin.control_type == 0) {
-      stepgen_instance_position_control(s, l_period_ns, &new_vel);
-    } else {
-      new_vel = *s->hal.pin.velocity_cmd;
-      if (s->hal.param.maxaccel > 0.0) {
-        if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) > s->hal.param.maxaccel) {
-          new_vel = (*s->hal.pin.velocity_fb) + (s->hal.param.maxaccel * f_period_s);
-        } else if (((new_vel - *s->hal.pin.velocity_fb) / f_period_s) < -s->hal.param.maxaccel) {
-          new_vel = (*s->hal.pin.velocity_fb) - (s->hal.param.maxaccel * f_period_s);
-        }
-      }
-    }
-
-    if (new_vel > maxvel) new_vel = maxvel; else if (new_vel < -maxvel) new_vel = -maxvel;
-
-    *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
-    txp->stepgen_freq_command[i] = (int32_t)(new_vel * s->hal.param.position_scale);
-
+    txp->stepgen_position_cmd[i] = (float)(*s->hal.pin.position_cmd);
     if (*s->hal.pin.enable == 1) txp->stepgen_enable_mask |= 1 << i; else txp->stepgen_enable_mask &= ~(1 << i);
   }
 
@@ -688,7 +596,7 @@ static void *uart_monitor(void *arg) {
 
     if (uart_fd < 0) {
       // Try open
-      rtapi_print("UART: opening %s\n", UART_DEV);
+      rtapi_print("UART: opening %s\n", uart_dev_path);
       if (uart_open_config() == 0) {
         // Pulse DTR/RTS and flush/drain residual
         int m;
