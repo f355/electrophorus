@@ -504,7 +504,7 @@ static void uart_read(void *arg, long l_period_ns) {
     // Same-tick fresh read: send PRU_READ trigger and read reply immediately
     int32_t read_token = (int32_t)PRU_READ;
     atomic_store_explicit(&uart_io_active, 1, memory_order_release);
-    ssize_t w4 = write_exact(uart_fd, &read_token, 4);
+    ssize_t w4 = write_exact(uart_fd, (const uint8_t*)&read_token, 4);
     ssize_t rr = (w4 < 0) ? -1 : read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
     atomic_store_explicit(&uart_io_active, 0, memory_order_release);
     if (rr < 0) {

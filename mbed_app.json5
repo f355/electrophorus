@@ -1,4 +1,8 @@
 {
+  "config": {
+    // Controls MCU same-tick PRU_READ behavior (MBED_CONF_APP_SAME_TICK_MODE)
+    "same-tick-mode": 1
+  },
   "target_overrides": {
     "LPC1768": {
       "target.application-profile": "bare-metal",
@@ -12,11 +16,7 @@
       },
       "target.c_lib": "std",
       "platform.stdio-baud-rate": 115200,
-      "target.stdio-uart": "UART_2",
-      "target.stdio-uart-tx": "P2_8",
-      "target.stdio-uart-rx": "P2_9",
-
-      "app.same-tick-mode": 1,
+      // console routed to UART2 by code (mbed_override_console); keep baud here
 
     }
   }

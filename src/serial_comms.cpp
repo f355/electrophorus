@@ -1,5 +1,15 @@
 #include "serial_comms.h"
 
+#include "mbed.h"
+
+namespace mbed {
+FileHandle* mbed_override_console(int fd) {
+  static UnbufferedSerial console(P2_8, P2_9, 115200);
+  (void)fd;
+  return &console;
+}
+}  // namespace mbed
+
 #include "LPC17xx.h"
 #include "machine_definitions.h"
 
@@ -83,7 +93,6 @@ bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel,
   core_util_critical_section_exit();
   return true;
 }
-
 
 void SerialComms::on_rx_dma_tc() {
   dma.clearTcIrq();
