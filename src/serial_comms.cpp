@@ -102,6 +102,8 @@ void SerialComms::on_rx_dma_tc() {
       // Host sent 4-byte PRU_READ token; reply immediately with current tx frame
       if (read_token_storage != PRU_READ) {
         bad_header_count++;
+      } else {
+        read_token_ok_count++;
       }
       if (!tx_in_progress) {
         const uint8_t send_idx = (pru_state == &tx_buf[0]) ? 0u : 1u;

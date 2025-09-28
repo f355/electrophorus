@@ -76,6 +76,7 @@ class SerialComms final {
   bool take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu);
 
   volatile uint32_t bad_header_count = 0;
+  volatile uint32_t read_token_ok_count = 0;
   volatile uint32_t tx_frames = 0;
   volatile uint32_t rx_frames = 0;
 };

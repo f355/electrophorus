@@ -55,6 +55,7 @@ enum State { ST_IDLE = 0, ST_RUNNING };
   comms_timer.start();
   auto last_ready = comms_timer.elapsed_time();
   auto last_idle_refresh = last_ready - IDLE_REFRESH_INTERVAL;
+  auto last_read_token_log = last_ready;
   State current_state = ST_IDLE;
   State prev_state = ST_RUNNING;
   bool prev_e_stop_active = comms->e_stop_active;
@@ -109,6 +110,12 @@ enum State { ST_IDLE = 0, ST_RUNNING };
           current_state = ST_IDLE;
         }
         break;
+    }
+
+    // once-a-second instrumentation: PRU_READ ok counter
+    if ((comms_timer.elapsed_time() - last_read_token_log) > 1s) {
+      printf("read_token_ok_count=%lu\n", (unsigned long)comms->read_token_ok_count);
+      last_read_token_log = comms_timer.elapsed_time();
     }
 
     wait_us(1000);  // 1 ms idle

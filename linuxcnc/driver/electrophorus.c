@@ -127,6 +127,9 @@ typedef struct {
   hal_s32_t *metric_bad_header;
   hal_s32_t *metric_read_errors;
   hal_s32_t *metric_write_errors;
+  // instrumentation
+  hal_s32_t *metric_uart_bytes_avail;
+  hal_s32_t *metric_uart_rx_total;
 
   hal_bit_t *inputs[INPUT_PINS * 2];  // digital input pins, twice for inverted 'not' pins
                                       // passed through to LinuxCNC
@@ -511,13 +514,30 @@ static void uart_read(void *arg, long l_period_ns) {
       *state->comms_status = 0;
       return;
     }
-    struct pollfd pfd = { .fd = uart_fd, .events = POLLIN, .revents = 0 };
-    int pr = poll(&pfd, 1, 1); // wait up to 1 ms for the 62B reply
-    if (pr <= 0 || (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
-      atomic_store_explicit(&uart_io_active, 0, memory_order_release);
-      (*state->metric_read_errors)++;
-      *state->comms_status = 0;
-      return;
+    // Wait up to ~1 ms until at least a full frame is buffered to avoid blocking
+    int avail = 0;
+    int waited_us = 0;
+    for (;;) {
+      (void)ioctl(uart_fd, FIONREAD, &avail);
+      if (state->metric_uart_bytes_avail) *state->metric_uart_bytes_avail = avail;
+      if (avail >= (int)XFER_BUF_SIZE) break;
+      struct pollfd pfd = { .fd = uart_fd, .events = POLLIN, .revents = 0 };
+      (void)poll(&pfd, 1, 0);
+      if ((pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+        atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+        (*state->metric_read_errors)++;
+        *state->comms_status = 0;
+        return;
+      }
+      if (waited_us >= 1000) {
+        atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+        (*state->metric_read_errors)++;
+        *state->comms_status = 0;
+        return;
+      }
+      struct timespec ts = { .tv_sec = 0, .tv_nsec = 100 * 1000 }; // 100 us
+      nanosleep(&ts, NULL);
+      waited_us += 100;
     }
     ssize_t rr = read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
     atomic_store_explicit(&uart_io_active, 0, memory_order_release);
@@ -525,6 +545,8 @@ static void uart_read(void *arg, long l_period_ns) {
       (*state->metric_read_errors)++;
       *state->comms_status = 0;
       return;
+    } else {
+      if (state->metric_uart_rx_total) *state->metric_uart_rx_total += (int)rr;
     }
   } else {
     // Pipelined: only read when awaiting reply after a prime or once link is up

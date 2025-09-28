@@ -563,6 +563,11 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
     return -1;
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_write_errors, comp_id, "%s.metrics.write-errors", prefix)))
     return -1;
+  // instrumentation
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_uart_bytes_avail, comp_id, "%s.metrics.uart-bytes-avail", prefix)))
+    return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_uart_rx_total, comp_id, "%s.metrics.uart-rx-total", prefix)))
+    return -1;
 
   // initial values
   *state->metrics_reset = 0;
@@ -602,6 +607,8 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
   *state->metric_bad_header = 0;
   *state->metric_read_errors = 0;
   *state->metric_write_errors = 0;
+  *state->metric_uart_bytes_avail = 0;
+  *state->metric_uart_rx_total = 0;
 
   return 0;
 }
