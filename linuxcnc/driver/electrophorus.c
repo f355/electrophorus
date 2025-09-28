@@ -501,11 +501,25 @@ static void uart_read(void *arg, long l_period_ns) {
   }
 
   if (state->same_tick_mode) {
-    // Same-tick fresh read: send PRU_READ trigger and read reply immediately
+    // Same-tick fresh read: send PRU_READ trigger and read reply immediately (guard with poll)
     int32_t read_token = (int32_t)PRU_READ;
     atomic_store_explicit(&uart_io_active, 1, memory_order_release);
     ssize_t w4 = write_exact(uart_fd, (const uint8_t*)&read_token, 4);
-    ssize_t rr = (w4 < 0) ? -1 : read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
+    if (w4 < 0) {
+      atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+      (*state->metric_read_errors)++;
+      *state->comms_status = 0;
+      return;
+    }
+    struct pollfd pfd = { .fd = uart_fd, .events = POLLIN, .revents = 0 };
+    int pr = poll(&pfd, 1, 1); // wait up to 1 ms for the 62B reply
+    if (pr <= 0 || (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+      atomic_store_explicit(&uart_io_active, 0, memory_order_release);
+      (*state->metric_read_errors)++;
+      *state->comms_status = 0;
+      return;
+    }
+    ssize_t rr = read_exact(uart_fd, &rx_frame.buffer[0], XFER_BUF_SIZE);
     atomic_store_explicit(&uart_io_active, 0, memory_order_release);
     if (rr < 0) {
       (*state->metric_read_errors)++;
