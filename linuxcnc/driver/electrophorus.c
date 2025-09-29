@@ -652,7 +652,7 @@ static void uart_write(void *arg, long l_period_ns) {
   }
 
   linuxCncState_t *txp = &tx_frame;
-  txp->header = PRU_DATA;
+  txp->header = (state->same_tick_mode ? PRU_WRITE : PRU_DATA);
   txp->stepgen_enable_mask = 0;
   txp->outputs = 0;
 

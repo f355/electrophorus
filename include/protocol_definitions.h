@@ -11,6 +11,7 @@
 #define PRU_DATA 0x61746164  // ASCII bytes on wire: 'd','a','t','a'
 #define PRU_CONF 0x666e6f63  // ASCII bytes on wire: 'c','o','n','f'
 #define PRU_READ 0x64616572  // ASCII bytes on wire: 'r','e','a','d'
+#define PRU_WRITE 0x74697277 // ASCII bytes on wire: 'w','r','i','t'
 
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)
@@ -41,10 +42,10 @@ typedef union {
   uint8_t buffer[XFER_BUF_SIZE];
   struct {
     int32_t header;
-    float stepper_init_position[STEPGENS];     // machine units
-    float stepper_max_accel[STEPGENS];         // mu/s^2
-    float stepper_position_scale[STEPGENS];    // steps per mu
-    float servo_period_s;                      // host servo period (seconds)
+    float stepper_init_position[STEPGENS];   // machine units
+    float stepper_max_accel[STEPGENS];       // mu/s^2
+    float stepper_position_scale[STEPGENS];  // steps per mu
+    float servo_period_s;                    // host servo period (seconds)
   };
 } linuxCncConf_t;
 

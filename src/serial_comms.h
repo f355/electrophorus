@@ -41,21 +41,28 @@ class SerialComms final {
   MODDMA_Config tx_dma_cfg;
   MODDMA_Config rx_dma_cfg;
 
-  // Same-tick support
-  enum class RxPhase : uint8_t { ExpectRead, ExpectCmd };
-  volatile RxPhase rx_phase = RxPhase::ExpectCmd;
-  volatile uint32_t read_token_storage = 0;
-  bool same_tick_mode = false;
+  // Unified RX state machine: accept PRU_READ (4B), PRU_WRITE/PRU_DATA/PRU_CONF (62B)
+  enum class RxPhase : uint8_t { ExpectHeader, ExpectPayload };
+  volatile RxPhase rx_phase = RxPhase::ExpectHeader;
+  volatile uint32_t read_token_storage = 0; // header/temp storage
+  volatile uint32_t current_header = 0;     // last parsed header
 
   // Helpers
   void on_tx_dma_tc();
   void on_rx_dma_tc();
-  void start_rx_dma_for_fill();
-  void start_rx_dma_read_token();
+  void start_rx_dma_for_fill();        // 62B payload
+  void start_rx_dma_read_token();      // 4B header
+  void start_rx_dma_payload58();       // 58B payload following 4B header
 
  public:
   SerialComms();
   ~SerialComms() = default;
+
+  // Expose counters for instrumentation in main loop
+  volatile uint32_t bad_header_count = 0;
+  volatile uint32_t read_token_ok_count = 0;
+  volatile uint32_t tx_frames = 0;
+  volatile uint32_t rx_frames = 0;
 
   // Event flags used by modules
   volatile bool e_stop_active = false;
@@ -74,11 +81,6 @@ class SerialComms final {
   [[nodiscard]] float get_servo_period_s() const { return servo_period_s; }
 
   bool take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu);
-
-  volatile uint32_t bad_header_count = 0;
-  volatile uint32_t read_token_ok_count = 0;
-  volatile uint32_t tx_frames = 0;
-  volatile uint32_t rx_frames = 0;
 };
 
 #endif  // SERIAL_COMMS_H
