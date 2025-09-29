@@ -63,6 +63,10 @@ class SerialComms final {
   volatile uint32_t read_token_ok_count = 0;
   volatile uint32_t tx_frames = 0;
   volatile uint32_t rx_frames = 0;
+  volatile uint32_t tx_tc = 0;
+  volatile uint32_t rx_header_tc = 0;
+  volatile uint32_t rx_payload_tc = 0;
+  volatile uint32_t last_header = 0;
 
   // Event flags used by modules
   volatile bool e_stop_active = false;

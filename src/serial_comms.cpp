@@ -18,6 +18,7 @@ static constexpr uint32_t UART_BAUD = 3000000;
 static constexpr uint32_t UART_FCR_FIFO_EN = (1u << 0);
 static constexpr uint32_t UART_FCR_RX_FIFO_RST = (1u << 1);
 static constexpr uint32_t UART_FCR_TX_FIFO_RST = (1u << 2);
+static constexpr uint32_t UART_FCR_DMA_MODE   = (1u << 3);
 
 SerialComms::SerialComms() {
   serial = new UnbufferedSerial(P0_2, P0_3, UART_BAUD);
@@ -31,8 +32,8 @@ SerialComms::SerialComms() {
 
   uart = (volatile LPC_UART_TypeDef*)LPC_UART0;
 
-  // Enable FIFO and reset RX/TX (write-only FCR)
-  uart->FCR = UART_FCR_FIFO_EN | UART_FCR_RX_FIFO_RST | UART_FCR_TX_FIFO_RST;
+  // Enable FIFO and reset RX/TX (write-only FCR), and enable DMA mode
+  uart->FCR = UART_FCR_FIFO_EN | UART_FCR_RX_FIFO_RST | UART_FCR_TX_FIFO_RST | UART_FCR_DMA_MODE;
 
   // Disable UART interrupts; DMA handles RX/TX
   uart->IER = 0;
@@ -49,6 +50,7 @@ void SerialComms::on_tx_dma_tc() {
   // Clear TC IRQ and mark TX complete
   dma.clearTcIrq();
   tx_in_progress = false;
+  tx_tc++;
   // No action needed; RX is re-armed by RX handler
 }
 
@@ -105,10 +107,12 @@ void SerialComms::on_rx_dma_tc() {
 
   if (rx_phase == RxPhase::ExpectHeader) {
     current_header = read_token_storage;
+    last_header = current_header;
+    rx_header_tc++;
     switch (current_header) {
       case PRU_READ:
         // Immediate reply with current state, no RX payload follows
-        read_token_ok_count++;
+        read_token_ok_count++; tx_frames++;
         if (!tx_in_progress) {
           const uint8_t send_idx = (pru_state == &tx_buf[0]) ? 0u : 1u;
           core_util_critical_section_enter();
@@ -150,6 +154,7 @@ void SerialComms::on_rx_dma_tc() {
   }
 
   // ExpectPayload: 58 bytes just arrived, assemble full frame and act on header
+  rx_payload_tc++;
   const uint32_t hdr = current_header;
   if (hdr == PRU_DATA) {
     // Pipelined behavior: publish command, reply with state
@@ -161,7 +166,7 @@ void SerialComms::on_rx_dma_tc() {
     core_util_critical_section_exit();
     rx_ready_idx = ready_idx;
     rx_fill_idx = ready_idx ^ 1u;
-    this->data_ready_callback();
+    rx_frames++; this->data_ready_callback();
 
     if (!tx_in_progress) {
       const uint8_t send_idx = (pru_state == &tx_buf[0]) ? 0u : 1u;
@@ -192,7 +197,7 @@ void SerialComms::on_rx_dma_tc() {
     core_util_critical_section_exit();
     rx_ready_idx = ready_idx;
     rx_fill_idx = ready_idx ^ 1u;
-    this->data_ready_callback();
+    rx_frames++; this->data_ready_callback();
   } else if (hdr == PRU_CONF) {
     // Config frame: update parameters, no reply
     const volatile linuxCncConf_t* c = reinterpret_cast<volatile linuxCncConf_t*>(&rx_buf[rx_fill_idx]);
@@ -205,7 +210,7 @@ void SerialComms::on_rx_dma_tc() {
     conf_pending_mask = (STEPGENS >= 32) ? 0xFFFFFFFFu : ((1u << STEPGENS) - 1u);
     // Rotate fill buffer to avoid overwrite
     rx_fill_idx ^= 1u;
-    this->data_ready_callback();
+    rx_frames++; this->data_ready_callback();
   } else {
     // Unexpected header; count and rotate
     bad_header_count++;
