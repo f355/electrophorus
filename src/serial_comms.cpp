@@ -20,6 +20,7 @@ static constexpr uint32_t UART_FCR_RX_FIFO_RST = (1u << 1);
 static constexpr uint32_t UART_FCR_TX_FIFO_RST = (1u << 2);
 static constexpr uint32_t UART_FCR_DMA_MODE   = (1u << 3);
 
+
 SerialComms::SerialComms() {
   serial = new UnbufferedSerial(P0_2, P0_3, UART_BAUD);
   serial->format(8, SerialBase::None, 1);
@@ -37,6 +38,8 @@ SerialComms::SerialComms() {
 
   // Disable UART interrupts; DMA handles RX/TX
   uart->IER = 0;
+
+
 
   // Set explicit NVIC priority for DMA interrupt
   NVIC_SetPriority(DMA_IRQn, COMMS_DMA_PRIORITY);
@@ -67,6 +70,7 @@ void SerialComms::start_rx_dma_for_fill() {
 }
 
 void SerialComms::start_rx_dma_read_token() {
+  header_rearm_calls++;
   rx_dma_cfg.channelNum(MODDMA::Channel_1)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
@@ -74,7 +78,14 @@ void SerialComms::start_rx_dma_read_token() {
       ->transferSize(4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
   dma.Prepare(&rx_dma_cfg);
+  header_prepare_calls++;
   dma.Enable(MODDMA::Channel_1);
+  header_enable_calls++;
+  // Snapshot DMA/UART state for debugging
+  dbg_rx_enabled = dma.Enabled(MODDMA::Channel_1);
+  dbg_rx_active  = dma.isActive(MODDMA::Channel_1);
+  dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
+  dbg_lsr = uart->LSR;
 }
 
 void SerialComms::start_rx_dma_payload58() {
@@ -87,7 +98,13 @@ void SerialComms::start_rx_dma_payload58() {
       ->transferSize(XFER_BUF_SIZE - 4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
   dma.Prepare(&rx_dma_cfg);
+  payload_prepare_calls++;
   dma.Enable(MODDMA::Channel_1);
+  payload_enable_calls++;
+  dbg_rx_enabled = dma.Enabled(MODDMA::Channel_1);
+  dbg_rx_active  = dma.isActive(MODDMA::Channel_1);
+  dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
+  dbg_lsr = uart->LSR;
 }
 
 bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {

@@ -67,6 +67,19 @@ class SerialComms final {
   volatile uint32_t rx_header_tc = 0;
   volatile uint32_t rx_payload_tc = 0;
   volatile uint32_t last_header = 0;
+  volatile uint32_t rx_lsr_err = 0;
+  volatile uint32_t rx_lsr_oe = 0;
+
+  // Debug/instrumentation for RX re-arm and DMA state
+  volatile uint32_t header_rearm_calls = 0;
+  volatile uint32_t header_prepare_calls = 0;
+  volatile uint32_t header_enable_calls = 0;
+  volatile uint32_t payload_prepare_calls = 0;
+  volatile uint32_t payload_enable_calls = 0;
+  volatile uint32_t dbg_rx_enabled = 0;   // DMACCConfig E bit for CH1
+  volatile uint32_t dbg_rx_active = 0;    // GPDMA active state for CH1
+  volatile uint32_t dbg_enbld_chns = 0;   // DMACEnbldChns snapshot
+  volatile uint32_t dbg_lsr = 0;          // UART LSR snapshot
 
   // Event flags used by modules
   volatile bool e_stop_active = false;

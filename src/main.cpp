@@ -114,14 +114,25 @@ enum State { ST_IDLE = 0, ST_RUNNING };
 
     // once-a-second instrumentation: PRU_READ ok counter
     if ((comms_timer.elapsed_time() - last_read_token_log) > 1s) {
-      printf("read_token_ok_count=%lu rx_hdr_tc=%lu rx_pay_tc=%lu tx_tc=%lu last_hdr=0x%08lx tx_frames=%lu rx_frames=%lu\n",
+      printf("read_token_ok_count=%lu rx_hdr_tc=%lu rx_pay_tc=%lu tx_tc=%lu last_hdr=0x%08lx tx_frames=%lu rx_frames=%lu rx_lsr_err=%lu rx_lsr_oe=%lu rearm=%lu/%lu/%lu payload=%lu/%lu dma_enbld=0x%08lx rx_enabled=%lu rx_active=%lu lsr=0x%02lx\n",
              (unsigned long)comms->read_token_ok_count,
              (unsigned long)comms->rx_header_tc,
              (unsigned long)comms->rx_payload_tc,
              (unsigned long)comms->tx_tc,
              (unsigned long)comms->last_header,
              (unsigned long)comms->tx_frames,
-             (unsigned long)comms->rx_frames);
+             (unsigned long)comms->rx_frames,
+             (unsigned long)comms->rx_lsr_err,
+             (unsigned long)comms->rx_lsr_oe,
+             (unsigned long)comms->header_rearm_calls,
+             (unsigned long)comms->header_prepare_calls,
+             (unsigned long)comms->header_enable_calls,
+             (unsigned long)comms->payload_prepare_calls,
+             (unsigned long)comms->payload_enable_calls,
+             (unsigned long)comms->dbg_enbld_chns,
+             (unsigned long)comms->dbg_rx_enabled,
+             (unsigned long)comms->dbg_rx_active,
+             (unsigned long)comms->dbg_lsr);
       last_read_token_log = comms_timer.elapsed_time();
     }
 
