@@ -49,6 +49,7 @@ SerialComms::SerialComms() {
   start_rx_dma_read_token();
 }
 
+
 void SerialComms::on_tx_dma_tc() {
   // Clear TC IRQ and mark TX complete
   dma.clearTcIrq();
@@ -57,54 +58,49 @@ void SerialComms::on_tx_dma_tc() {
   // No action needed; RX is re-armed by RX handler
 }
 
-void SerialComms::start_rx_dma_for_fill() {
-  rx_dma_cfg.channelNum(MODDMA::Channel_1)
-      ->transferType(MODDMA::p2m)
-      ->srcConn(MODDMA::UART0_Rx)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[0]))
-      ->transferSize(XFER_BUF_SIZE)
-      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
-  dma.Prepare(&rx_dma_cfg);
-  // Ensure DMA is enabled for this channel
-  dma.Enable(MODDMA::Channel_1);
-}
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  rx_dma_cfg.channelNum(MODDMA::Channel_1)
+  const uint8_t next = rx_dma_ch_idx ^ 1u;
+  MODDMA::CHANNELS ch = RX_DMA_CHANNELS[next];
+  rx_dma_cfg[next].channelNum(ch)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
       ->transferSize(4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
-  dma.Prepare(&rx_dma_cfg);
+  dma.Prepare(&rx_dma_cfg[next]);
   header_prepare_calls++;
-  dma.Enable(MODDMA::Channel_1);
+  dma.Enable(ch);
   header_enable_calls++;
   // Snapshot DMA/UART state for debugging
-  dbg_rx_enabled = dma.Enabled(MODDMA::Channel_1);
-  dbg_rx_active  = dma.isActive(MODDMA::Channel_1);
+  dbg_rx_enabled = dma.Enabled(ch);
+  dbg_rx_active  = dma.isActive(ch);
   dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
   dbg_lsr = uart->LSR;
+  rx_dma_ch_idx = next;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   // We already captured the 4-byte header into current_header; store it and fetch the remaining 58 bytes
   rx_buf[rx_fill_idx].header = current_header;
-  rx_dma_cfg.channelNum(MODDMA::Channel_1)
+  const uint8_t next = rx_dma_ch_idx ^ 1u;
+  MODDMA::CHANNELS ch = RX_DMA_CHANNELS[next];
+  rx_dma_cfg[next].channelNum(ch)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[4]))
       ->transferSize(XFER_BUF_SIZE - 4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
-  dma.Prepare(&rx_dma_cfg);
+  dma.Prepare(&rx_dma_cfg[next]);
   payload_prepare_calls++;
-  dma.Enable(MODDMA::Channel_1);
+  dma.Enable(ch);
   payload_enable_calls++;
-  dbg_rx_enabled = dma.Enabled(MODDMA::Channel_1);
-  dbg_rx_active  = dma.isActive(MODDMA::Channel_1);
+  dbg_rx_enabled = dma.Enabled(ch);
+  dbg_rx_active  = dma.isActive(ch);
   dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
   dbg_lsr = uart->LSR;
+  rx_dma_ch_idx = next;
 }
 
 bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {

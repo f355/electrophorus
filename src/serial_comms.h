@@ -39,7 +39,9 @@ class SerialComms final {
   // DMA engine and configs
   MODDMA dma;
   MODDMA_Config tx_dma_cfg;
-  MODDMA_Config rx_dma_cfg;
+  MODDMA_Config rx_dma_cfg[2];
+  static constexpr MODDMA::CHANNELS RX_DMA_CHANNELS[2] = { MODDMA::Channel_1, MODDMA::Channel_2 };
+  volatile uint8_t rx_dma_ch_idx = 0;
 
   // Unified RX state machine: accept PRU_READ (4B), PRU_WRITE/PRU_DATA/PRU_CONF (62B)
   enum class RxPhase : uint8_t { ExpectHeader, ExpectPayload };
@@ -50,7 +52,6 @@ class SerialComms final {
   // Helpers
   void on_tx_dma_tc();
   void on_rx_dma_tc();
-  void start_rx_dma_for_fill();        // 62B payload
   void start_rx_dma_read_token();      // 4B header
   void start_rx_dma_payload58();       // 58B payload following 4B header
 
@@ -80,6 +81,8 @@ class SerialComms final {
   volatile uint32_t dbg_rx_active = 0;    // GPDMA active state for CH1
   volatile uint32_t dbg_enbld_chns = 0;   // DMACEnbldChns snapshot
   volatile uint32_t dbg_lsr = 0;          // UART LSR snapshot
+
+
 
   // Event flags used by modules
   volatile bool e_stop_active = false;
