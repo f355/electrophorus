@@ -94,6 +94,7 @@ enum State { ST_IDLE = 0, ST_RUNNING };
       case ST_RUNNING:
         if (current_state != prev_state) {
           printf("running...\n");
+          last_read_token_log = comms_timer.elapsed_time();
         }
         prev_state = current_state;
 
