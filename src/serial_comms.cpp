@@ -123,6 +123,9 @@ bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel,
 
 void SerialComms::on_rx_dma_tc() {
   dma.clearTcIrq();
+  // Explicitly disable the channel that just completed to prevent MODDMA from auto-disabling it after callback
+  MODDMA::CHANNELS current_ch = RX_DMA_CHANNELS[rx_dma_ch_idx];
+  dma.Disable(current_ch);
 
   if (rx_phase == RxPhase::ExpectHeader) {
     current_header = read_token_storage;
