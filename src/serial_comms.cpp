@@ -61,7 +61,11 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
+  core_util_critical_section_enter();
   const uint8_t next = rx_dma_ch_idx ^ 1u;
+  rx_dma_ch_idx = next;  // Update index before enabling to prevent race
+  core_util_critical_section_exit();
+
   MODDMA::CHANNELS ch = RX_DMA_CHANNELS[next];
   rx_dma_cfg[next].channelNum(ch)
       ->transferType(MODDMA::p2m)
@@ -78,13 +82,16 @@ void SerialComms::start_rx_dma_read_token() {
   dbg_rx_active  = dma.isActive(ch);
   dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
   dbg_lsr = uart->LSR;
-  rx_dma_ch_idx = next;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   // We already captured the 4-byte header into current_header; store it and fetch the remaining 58 bytes
   rx_buf[rx_fill_idx].header = current_header;
+  core_util_critical_section_enter();
   const uint8_t next = rx_dma_ch_idx ^ 1u;
+  rx_dma_ch_idx = next;  // Update index before enabling to prevent race
+  core_util_critical_section_exit();
+
   MODDMA::CHANNELS ch = RX_DMA_CHANNELS[next];
   rx_dma_cfg[next].channelNum(ch)
       ->transferType(MODDMA::p2m)
@@ -100,7 +107,6 @@ void SerialComms::start_rx_dma_payload58() {
   dbg_rx_active  = dma.isActive(ch);
   dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
   dbg_lsr = uart->LSR;
-  rx_dma_ch_idx = next;
 }
 
 bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {
@@ -144,6 +150,8 @@ void SerialComms::on_rx_dma_tc() {
               ->attach_tc(this, &SerialComms::on_tx_dma_tc);
           dma.Prepare(&tx_dma_cfg);
           dma.Enable(MODDMA::Channel_0);
+        } else {
+          tx_skipped_busy++;
         }
         // Next: wait for another header (likely PRU_WRITE)
         rx_phase = RxPhase::ExpectHeader;

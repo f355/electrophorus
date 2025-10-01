@@ -49,7 +49,11 @@ enum State { ST_IDLE = 0, ST_RUNNING };
   RxListener::instance()->register_modules(modules);
   RxListener::start();
 
-  Watchdog::get_instance().start(2000);
+  if (!Watchdog::get_instance().start(2000)) {
+    printf("WARNING: Watchdog failed to start!\n");
+  } else {
+    printf("Watchdog started: %lums timeout\n", (unsigned long)Watchdog::get_instance().get_timeout());
+  }
 
   Timer comms_timer;
   comms_timer.start();
@@ -59,8 +63,10 @@ enum State { ST_IDLE = 0, ST_RUNNING };
   State current_state = ST_IDLE;
   State prev_state = ST_RUNNING;
   bool prev_e_stop_active = comms->e_stop_active;
+  volatile uint32_t main_loop_heartbeat = 0;
 
   while (true) {
+    main_loop_heartbeat++;
     Watchdog::get_instance().kick();
 
     if (comms->e_stop_active != prev_e_stop_active) {
@@ -115,7 +121,8 @@ enum State { ST_IDLE = 0, ST_RUNNING };
 
     // once-a-second instrumentation: PRU_READ ok counter
     if ((comms_timer.elapsed_time() - last_read_token_log) > 1s) {
-      printf("read_token_ok_count=%lu rx_hdr_tc=%lu rx_pay_tc=%lu tx_tc=%lu last_hdr=0x%08lx tx_frames=%lu rx_frames=%lu rx_lsr_err=%lu rx_lsr_oe=%lu rearm=%lu/%lu/%lu payload=%lu/%lu dma_enbld=0x%08lx rx_enabled=%lu rx_active=%lu lsr=0x%02lx\n",
+      printf("heartbeat=%lu read_token_ok=%lu rx_hdr_tc=%lu rx_pay_tc=%lu tx_tc=%lu last_hdr=0x%08lx tx_frames=%lu rx_frames=%lu tx_skipped=%lu\n",
+             (unsigned long)main_loop_heartbeat,
              (unsigned long)comms->read_token_ok_count,
              (unsigned long)comms->rx_header_tc,
              (unsigned long)comms->rx_payload_tc,
@@ -123,17 +130,7 @@ enum State { ST_IDLE = 0, ST_RUNNING };
              (unsigned long)comms->last_header,
              (unsigned long)comms->tx_frames,
              (unsigned long)comms->rx_frames,
-             (unsigned long)comms->rx_lsr_err,
-             (unsigned long)comms->rx_lsr_oe,
-             (unsigned long)comms->header_rearm_calls,
-             (unsigned long)comms->header_prepare_calls,
-             (unsigned long)comms->header_enable_calls,
-             (unsigned long)comms->payload_prepare_calls,
-             (unsigned long)comms->payload_enable_calls,
-             (unsigned long)comms->dbg_enbld_chns,
-             (unsigned long)comms->dbg_rx_enabled,
-             (unsigned long)comms->dbg_rx_active,
-             (unsigned long)comms->dbg_lsr);
+             (unsigned long)comms->tx_skipped_busy);
       last_read_token_log = comms_timer.elapsed_time();
     }
 

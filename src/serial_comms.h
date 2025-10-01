@@ -81,6 +81,7 @@ class SerialComms final {
   volatile uint32_t dbg_rx_active = 0;    // GPDMA active state for CH1
   volatile uint32_t dbg_enbld_chns = 0;   // DMACEnbldChns snapshot
   volatile uint32_t dbg_lsr = 0;          // UART LSR snapshot
+  volatile uint32_t tx_skipped_busy = 0;  // PRU_READ arrived but TX already in progress
 
 
 
