@@ -41,22 +41,36 @@ SerialComms::SerialComms() {
   // Set explicit NVIC priority for DMA interrupt
   NVIC_SetPriority(DMA_IRQn, COMMS_DMA_PRIORITY);
 
-  // Unified RX: always start by fetching a 4-byte header
   rx_phase = RxPhase::ExpectHeader;
 
-  // Prepare both RX DMA channels (ping-pong pattern like SPI)
-  rx_dma_cfg[0].channelNum(MODDMA::Channel_1)
+  // Configure header RX channels (4 bytes, ping-pong between CH1 and CH2)
+  rx_header_dma_cfg[0].channelNum(MODDMA::Channel_1)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
       ->transferSize(4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
 
-  rx_dma_cfg[1].channelNum(MODDMA::Channel_2)
+  rx_header_dma_cfg[1].channelNum(MODDMA::Channel_2)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
       ->transferSize(4)
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+
+  // Configure payload RX channels (58 bytes, ping-pong between CH3 and CH4)
+  rx_payload_dma_cfg[0].channelNum(MODDMA::Channel_3)
+      ->transferType(MODDMA::p2m)
+      ->srcConn(MODDMA::UART0_Rx)
+      ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[0].buffer[4]))
+      ->transferSize(XFER_BUF_SIZE - 4)
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+
+  rx_payload_dma_cfg[1].channelNum(MODDMA::Channel_4)
+      ->transferType(MODDMA::p2m)
+      ->srcConn(MODDMA::UART0_Rx)
+      ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[1].buffer[4]))
+      ->transferSize(XFER_BUF_SIZE - 4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
 
   // Configure TX DMA channel
@@ -67,8 +81,9 @@ SerialComms::SerialComms() {
       ->transferSize(XFER_BUF_SIZE)
       ->attach_tc(this, &SerialComms::on_tx_dma_tc);
 
-  dma.Prepare(&rx_dma_cfg[0]);
-  rx_dma_ch_idx = 0;
+  dma.Prepare(&rx_header_dma_cfg[0]);
+  rx_header_ch_idx = 0;
+  rx_payload_ch_idx = 0;
 }
 
 void SerialComms::on_tx_dma_tc() {
@@ -80,26 +95,18 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  const uint8_t next = rx_dma_ch_idx ^ 1u;
-
-  rx_dma_cfg[next].dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
-      ->transferSize(4);
-  dma.Prepare(&rx_dma_cfg[next]);
+  const uint8_t next = rx_header_ch_idx ^ 1u;
+  dma.Prepare(&rx_header_dma_cfg[next]);
   header_prepare_calls++;
-
-  rx_dma_ch_idx = next;
+  rx_header_ch_idx = next;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   rx_buf[rx_fill_idx].header = current_header;
-  const uint8_t next = rx_dma_ch_idx ^ 1u;
-
-  rx_dma_cfg[next].dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[4]))
-      ->transferSize(XFER_BUF_SIZE - 4);
-  dma.Prepare(&rx_dma_cfg[next]);
+  // Use the payload channel that matches the current fill buffer
+  dma.Prepare(&rx_payload_dma_cfg[rx_fill_idx]);
   payload_prepare_calls++;
-
-  rx_dma_ch_idx = next;
+  rx_payload_ch_idx = rx_fill_idx;
 }
 
 bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {

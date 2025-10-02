@@ -527,6 +527,7 @@ static void uart_read(void *arg, long l_period_ns) {
         atomic_store_explicit(&uart_io_active, 0, memory_order_release);
         (*state->metric_read_errors)++;
         *state->comms_status = 0;
+        rtapi_print_msg(RTAPI_MSG_ERR, "UART error detected (revents=%#x), stopping comms\n", pfd.revents);
         return;
       }
       if (waited_us >= 1000) {
