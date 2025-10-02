@@ -504,6 +504,9 @@ static void uart_read(void *arg, long l_period_ns) {
   }
 
   if (state->same_tick_mode) {
+    // If comms already failed, don't attempt any I/O
+    if (!*state->comms_status) return;
+
     // Same-tick fresh read: send PRU_READ trigger and read reply immediately (guard with poll)
     int32_t read_token = (int32_t)PRU_READ;
     atomic_store_explicit(&uart_io_active, 1, memory_order_release);
@@ -512,6 +515,7 @@ static void uart_read(void *arg, long l_period_ns) {
       atomic_store_explicit(&uart_io_active, 0, memory_order_release);
       (*state->metric_read_errors)++;
       *state->comms_status = 0;
+      rtapi_print_msg(RTAPI_MSG_ERR, "UART write error, stopping comms\n");
       return;
     }
     // Wait up to ~1 ms until at least a full frame is buffered to avoid blocking

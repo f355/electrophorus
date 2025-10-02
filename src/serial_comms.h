@@ -41,8 +41,6 @@ class SerialComms final {
   MODDMA_Config tx_dma_cfg;
   MODDMA_Config rx_header_dma_cfg[2];
   MODDMA_Config rx_payload_dma_cfg[2];
-  volatile uint8_t rx_header_ch_idx = 0;
-  volatile uint8_t rx_payload_ch_idx = 0;
 
   // Unified RX state machine: accept PRU_READ (4B), PRU_WRITE/PRU_DATA/PRU_CONF (62B)
   enum class RxPhase : uint8_t { ExpectHeader, ExpectPayload };

@@ -82,8 +82,6 @@ SerialComms::SerialComms() {
       ->attach_tc(this, &SerialComms::on_tx_dma_tc);
 
   dma.Prepare(&rx_header_dma_cfg[0]);
-  rx_header_ch_idx = 0;
-  rx_payload_ch_idx = 0;
 }
 
 void SerialComms::on_tx_dma_tc() {
@@ -96,7 +94,6 @@ void SerialComms::on_tx_dma_tc() {
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
   MODDMA::CHANNELS completed_ch = dma.irqProcessingChannel();
-  // Prepare the other header channel
   if (completed_ch == MODDMA::Channel_1) {
     dma.Prepare(&rx_header_dma_cfg[1]);
   } else {
@@ -107,13 +104,7 @@ void SerialComms::start_rx_dma_read_token() {
 
 void SerialComms::start_rx_dma_payload58() {
   rx_buf[rx_fill_idx].header = current_header;
-  MODDMA::CHANNELS completed_ch = dma.irqProcessingChannel();
-  // Prepare the other payload channel
-  if (completed_ch == MODDMA::Channel_3) {
-    dma.Prepare(&rx_payload_dma_cfg[1]);
-  } else {
-    dma.Prepare(&rx_payload_dma_cfg[0]);
-  }
+  dma.Prepare(&rx_payload_dma_cfg[rx_fill_idx]);
   payload_prepare_calls++;
 }
 
