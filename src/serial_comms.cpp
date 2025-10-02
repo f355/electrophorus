@@ -95,18 +95,26 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  const uint8_t next = rx_header_ch_idx ^ 1u;
-  dma.Prepare(&rx_header_dma_cfg[next]);
+  MODDMA::CHANNELS completed_ch = dma.irqProcessingChannel();
+  // Prepare the other header channel
+  if (completed_ch == MODDMA::Channel_1) {
+    dma.Prepare(&rx_header_dma_cfg[1]);
+  } else {
+    dma.Prepare(&rx_header_dma_cfg[0]);
+  }
   header_prepare_calls++;
-  rx_header_ch_idx = next;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   rx_buf[rx_fill_idx].header = current_header;
-  // Use the payload channel that matches the current fill buffer
-  dma.Prepare(&rx_payload_dma_cfg[rx_fill_idx]);
+  MODDMA::CHANNELS completed_ch = dma.irqProcessingChannel();
+  // Prepare the other payload channel
+  if (completed_ch == MODDMA::Channel_3) {
+    dma.Prepare(&rx_payload_dma_cfg[1]);
+  } else {
+    dma.Prepare(&rx_payload_dma_cfg[0]);
+  }
   payload_prepare_calls++;
-  rx_payload_ch_idx = rx_fill_idx;
 }
 
 bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {
