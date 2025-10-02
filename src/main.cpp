@@ -121,7 +121,7 @@ enum State { ST_IDLE = 0, ST_RUNNING };
 
     // once-a-second instrumentation: PRU_READ ok counter
     if ((comms_timer.elapsed_time() - last_read_token_log) > 1s) {
-      printf("heartbeat=%lu read_token_ok=%lu rx_hdr_tc=%lu rx_pay_tc=%lu tx_tc=%lu last_hdr=0x%08lx tx_frames=%lu rx_frames=%lu tx_skipped=%lu\n",
+      printf("heartbeat=%lu read_token_ok=%lu rx_hdr_tc=%lu rx_pay_tc=%lu tx_tc=%lu last_hdr=0x%08lx tx_frames=%lu rx_frames=%lu tx_skipped=%lu isr_reentry=%lu\n",
              (unsigned long)main_loop_heartbeat,
              (unsigned long)comms->read_token_ok_count,
              (unsigned long)comms->rx_header_tc,
@@ -130,7 +130,8 @@ enum State { ST_IDLE = 0, ST_RUNNING };
              (unsigned long)comms->last_header,
              (unsigned long)comms->tx_frames,
              (unsigned long)comms->rx_frames,
-             (unsigned long)comms->tx_skipped_busy);
+             (unsigned long)comms->tx_skipped_busy,
+             (unsigned long)comms->isr_reentry);
       last_read_token_log = comms_timer.elapsed_time();
     }
 
