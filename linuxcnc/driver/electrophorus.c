@@ -504,8 +504,8 @@ static void uart_read(void *arg, long l_period_ns) {
   }
 
   if (state->same_tick_mode) {
-    // If comms already failed, don't attempt any I/O
-    if (!*state->comms_status) return;
+    // Only attempt I/O if we have prime_pending (after reset) or comms_status is already true
+    if (!prime_pending && !*state->comms_status) return;
 
     // Same-tick fresh read: send PRU_READ trigger and read reply immediately (guard with poll)
     int32_t read_token = (int32_t)PRU_READ;
