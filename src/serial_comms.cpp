@@ -82,6 +82,7 @@ SerialComms::SerialComms() {
       ->attach_tc(this, &SerialComms::on_tx_dma_tc);
 
   dma.Prepare(&rx_header_dma_cfg[0]);
+  next_header_ch = 1;
 }
 
 void SerialComms::on_tx_dma_tc() {
@@ -93,13 +94,9 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  MODDMA::CHANNELS completed_ch = dma.irqProcessingChannel();
-  if (completed_ch == MODDMA::Channel_1) {
-    dma.Prepare(&rx_header_dma_cfg[1]);
-  } else {
-    dma.Prepare(&rx_header_dma_cfg[0]);
-  }
+  dma.Prepare(&rx_header_dma_cfg[next_header_ch]);
   header_prepare_calls++;
+  next_header_ch ^= 1u;
 }
 
 void SerialComms::start_rx_dma_payload58() {
@@ -121,6 +118,12 @@ bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel,
 }
 
 void SerialComms::on_rx_dma_tc() {
+  if (isr_active) {
+    isr_reentry++;
+    return;
+  }
+  isr_active = 1;
+
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
@@ -149,6 +152,7 @@ void SerialComms::on_rx_dma_tc() {
         }
         rx_phase = RxPhase::ExpectHeader;
         start_rx_dma_read_token();
+        isr_active = 0;
         return;
 
       case PRU_DATA:
@@ -156,12 +160,14 @@ void SerialComms::on_rx_dma_tc() {
       case PRU_CONF:
         rx_phase = RxPhase::ExpectPayload;
         start_rx_dma_payload58();
+        isr_active = 0;
         return;
 
       default:
         bad_header_count++;
         rx_phase = RxPhase::ExpectHeader;
         start_rx_dma_read_token();
+        isr_active = 0;
         return;
     }
   }
@@ -223,4 +229,5 @@ void SerialComms::on_rx_dma_tc() {
 
   rx_phase = RxPhase::ExpectHeader;
   start_rx_dma_read_token();
+  isr_active = 0;
 }

@@ -41,6 +41,7 @@ class SerialComms final {
   MODDMA_Config tx_dma_cfg;
   MODDMA_Config rx_header_dma_cfg[2];
   MODDMA_Config rx_payload_dma_cfg[2];
+  volatile uint8_t next_header_ch = 0;
 
   // Unified RX state machine: accept PRU_READ (4B), PRU_WRITE/PRU_DATA/PRU_CONF (62B)
   enum class RxPhase : uint8_t { ExpectHeader, ExpectPayload };
@@ -81,6 +82,8 @@ class SerialComms final {
   volatile uint32_t dbg_enbld_chns = 0;   // DMACEnbldChns snapshot
   volatile uint32_t dbg_lsr = 0;          // UART LSR snapshot
   volatile uint32_t tx_skipped_busy = 0;  // PRU_READ arrived but TX already in progress
+  volatile uint32_t isr_reentry = 0;      // ISR called while already active
+  volatile uint32_t isr_active = 0;       // ISR currently executing
 
 
 
