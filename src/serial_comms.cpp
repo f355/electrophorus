@@ -73,10 +73,17 @@ SerialComms::SerialComms() {
       ->transferSize(XFER_BUF_SIZE - 4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
 
-  // Configure TX DMA channel
-  tx_dma_cfg.channelNum(MODDMA::Channel_0)
+  // Configure TX DMA channels (62 bytes, ping-pong between CH0 and CH5)
+  tx_dma_cfg[0].channelNum(MODDMA::Channel_0)
       ->transferType(MODDMA::m2p)
       ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[0].buffer[0]))
+      ->dstConn(MODDMA::UART0_Tx)
+      ->transferSize(XFER_BUF_SIZE)
+      ->attach_tc(this, &SerialComms::on_tx_dma_tc);
+
+  tx_dma_cfg[1].channelNum(MODDMA::Channel_5)
+      ->transferType(MODDMA::m2p)
+      ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[1].buffer[0]))
       ->dstConn(MODDMA::UART0_Tx)
       ->transferSize(XFER_BUF_SIZE)
       ->attach_tc(this, &SerialComms::on_tx_dma_tc);
@@ -94,42 +101,14 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  // Directly write to channel registers to avoid modifying global GPDMA state
-  uint32_t ch_num = rx_header_dma_cfg[next_header_ch].channelNum();
-  LPC_GPDMACH_TypeDef* pChannel = (LPC_GPDMACH_TypeDef*)(LPC_GPDMACH0_BASE + (0x20 * ch_num));
-
-  // Clear interrupts
-  LPC_GPDMA->DMACIntTCClear = (1UL << ch_num);
-  LPC_GPDMA->DMACIntErrClr = (1UL << ch_num);
-
-  // Update destination address and transfer size
-  pChannel->DMACCDestAddr = reinterpret_cast<uint32_t>(&read_token_storage);
-  pChannel->DMACCControl = (pChannel->DMACCControl & ~0xFFF) | 4;
-
-  // Enable channel
-  pChannel->DMACCConfig |= 1;
-
+  dma.Prepare(&rx_header_dma_cfg[next_header_ch]);
   header_prepare_calls++;
   next_header_ch ^= 1u;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   rx_buf[rx_fill_idx].header = current_header;
-  // Directly write to channel registers to avoid modifying global GPDMA state
-  uint32_t ch_num = rx_payload_dma_cfg[rx_fill_idx].channelNum();
-  LPC_GPDMACH_TypeDef* pChannel = (LPC_GPDMACH_TypeDef*)(LPC_GPDMACH0_BASE + (0x20 * ch_num));
-
-  // Clear interrupts
-  LPC_GPDMA->DMACIntTCClear = (1UL << ch_num);
-  LPC_GPDMA->DMACIntErrClr = (1UL << ch_num);
-
-  // Update destination address and transfer size
-  pChannel->DMACCDestAddr = reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[4]);
-  pChannel->DMACCControl = (pChannel->DMACCControl & ~0xFFF) | (XFER_BUF_SIZE - 4);
-
-  // Enable channel
-  pChannel->DMACCConfig |= 1;
-
+  dma.Prepare(&rx_payload_dma_cfg[rx_fill_idx]);
   payload_prepare_calls++;
 }
 
@@ -173,8 +152,7 @@ void SerialComms::on_rx_dma_tc() {
           tx_send_idx = send_idx;
           tx_fill_idx = send_idx ^ 1u;
           tx_in_progress = true;
-          tx_dma_cfg.srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]));
-          dma.Prepare(&tx_dma_cfg);
+          dma.Prepare(&tx_dma_cfg[tx_send_idx]);
         } else {
           tx_skipped_busy++;
         }
@@ -224,8 +202,7 @@ void SerialComms::on_rx_dma_tc() {
       tx_send_idx = send_idx;
       tx_fill_idx = send_idx ^ 1u;
       tx_in_progress = true;
-      tx_dma_cfg.srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]));
-      dma.Prepare(&tx_dma_cfg);
+      dma.Prepare(&tx_dma_cfg[tx_send_idx]);
     }
   } else if (hdr == PRU_WRITE) {
     const uint8_t ready_idx = rx_fill_idx;

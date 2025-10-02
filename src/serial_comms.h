@@ -38,7 +38,7 @@ class SerialComms final {
 
   // DMA engine and configs
   MODDMA dma;
-  MODDMA_Config tx_dma_cfg;
+  MODDMA_Config tx_dma_cfg[2];
   MODDMA_Config rx_header_dma_cfg[2];
   MODDMA_Config rx_payload_dma_cfg[2];
   volatile uint8_t next_header_ch = 0;
