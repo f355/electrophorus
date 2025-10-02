@@ -94,14 +94,14 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  dma.Prepare(&rx_header_dma_cfg[next_header_ch]);
+  dma.Enable(rx_header_dma_cfg[next_header_ch].channelNum());
   header_prepare_calls++;
   next_header_ch ^= 1u;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   rx_buf[rx_fill_idx].header = current_header;
-  dma.Prepare(&rx_payload_dma_cfg[rx_fill_idx]);
+  dma.Enable(rx_payload_dma_cfg[rx_fill_idx].channelNum());
   payload_prepare_calls++;
 }
 
