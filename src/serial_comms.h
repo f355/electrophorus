@@ -52,6 +52,7 @@ class SerialComms final {
   // Helpers
   void on_tx_dma_tc();
   void on_rx_dma_tc();
+  void on_dma_err();
   void start_rx_dma_read_token();      // 4B header
   void start_rx_dma_payload58();       // 58B payload following 4B header
 
@@ -84,6 +85,7 @@ class SerialComms final {
   volatile uint32_t tx_skipped_busy = 0;  // PRU_READ arrived but TX already in progress
   volatile uint32_t isr_reentry = 0;      // ISR called while already active
   volatile uint32_t isr_active = 0;       // ISR currently executing
+  volatile uint32_t dma_errors = 0;       // DMA error interrupts
 
 
 

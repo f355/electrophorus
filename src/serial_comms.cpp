@@ -49,14 +49,16 @@ SerialComms::SerialComms() {
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
       ->transferSize(4)
-      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc)
+      ->attach_err(this, &SerialComms::on_dma_err);
 
   rx_header_dma_cfg[1].channelNum(MODDMA::Channel_2)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
       ->transferSize(4)
-      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc)
+      ->attach_err(this, &SerialComms::on_dma_err);
 
   // Configure payload RX channels (58 bytes, ping-pong between CH3 and CH4)
   rx_payload_dma_cfg[0].channelNum(MODDMA::Channel_3)
@@ -64,14 +66,16 @@ SerialComms::SerialComms() {
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[0].buffer[4]))
       ->transferSize(XFER_BUF_SIZE - 4)
-      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc)
+      ->attach_err(this, &SerialComms::on_dma_err);
 
   rx_payload_dma_cfg[1].channelNum(MODDMA::Channel_4)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[1].buffer[4]))
       ->transferSize(XFER_BUF_SIZE - 4)
-      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc)
+      ->attach_err(this, &SerialComms::on_dma_err);
 
   // Configure TX DMA channels (62 bytes, ping-pong between CH0 and CH5)
   tx_dma_cfg[0].channelNum(MODDMA::Channel_0)
@@ -79,14 +83,16 @@ SerialComms::SerialComms() {
       ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[0].buffer[0]))
       ->dstConn(MODDMA::UART0_Tx)
       ->transferSize(XFER_BUF_SIZE)
-      ->attach_tc(this, &SerialComms::on_tx_dma_tc);
+      ->attach_tc(this, &SerialComms::on_tx_dma_tc)
+      ->attach_err(this, &SerialComms::on_dma_err);
 
   tx_dma_cfg[1].channelNum(MODDMA::Channel_5)
       ->transferType(MODDMA::m2p)
       ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[1].buffer[0]))
       ->dstConn(MODDMA::UART0_Tx)
       ->transferSize(XFER_BUF_SIZE)
-      ->attach_tc(this, &SerialComms::on_tx_dma_tc);
+      ->attach_tc(this, &SerialComms::on_tx_dma_tc)
+      ->attach_err(this, &SerialComms::on_dma_err);
 
   dma.Prepare(&rx_header_dma_cfg[0]);
   next_header_ch = 1;
@@ -97,6 +103,11 @@ void SerialComms::on_tx_dma_tc() {
   dma.clearTcIrq();
   tx_in_progress = false;
   tx_tc++;
+}
+
+void SerialComms::on_dma_err() {
+  dma_errors++;
+  dma.clearErrIrq();
 }
 
 void SerialComms::start_rx_dma_read_token() {
