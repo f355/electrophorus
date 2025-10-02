@@ -18,8 +18,7 @@ static constexpr uint32_t UART_BAUD = 3000000;
 static constexpr uint32_t UART_FCR_FIFO_EN = (1u << 0);
 static constexpr uint32_t UART_FCR_RX_FIFO_RST = (1u << 1);
 static constexpr uint32_t UART_FCR_TX_FIFO_RST = (1u << 2);
-static constexpr uint32_t UART_FCR_DMA_MODE   = (1u << 3);
-
+static constexpr uint32_t UART_FCR_DMA_MODE = (1u << 3);
 
 SerialComms::SerialComms() {
   serial = new UnbufferedSerial(P0_2, P0_3, UART_BAUD);
@@ -39,74 +38,68 @@ SerialComms::SerialComms() {
   // Disable UART interrupts; DMA handles RX/TX
   uart->IER = 0;
 
-
-
   // Set explicit NVIC priority for DMA interrupt
   NVIC_SetPriority(DMA_IRQn, COMMS_DMA_PRIORITY);
 
   // Unified RX: always start by fetching a 4-byte header
   rx_phase = RxPhase::ExpectHeader;
-  start_rx_dma_read_token();
-}
 
-
-void SerialComms::on_tx_dma_tc() {
-  // Clear TC IRQ and mark TX complete
-  dma.clearTcIrq();
-  tx_in_progress = false;
-  tx_tc++;
-  // No action needed; RX is re-armed by RX handler
-}
-
-
-void SerialComms::start_rx_dma_read_token() {
-  header_rearm_calls++;
-  core_util_critical_section_enter();
-  const uint8_t next = rx_dma_ch_idx ^ 1u;
-  rx_dma_ch_idx = next;  // Update index before enabling to prevent race
-  core_util_critical_section_exit();
-
-  MODDMA::CHANNELS ch = RX_DMA_CHANNELS[next];
-  rx_dma_cfg[next].channelNum(ch)
+  // Prepare both RX DMA channels (ping-pong pattern like SPI)
+  rx_dma_cfg[0].channelNum(MODDMA::Channel_1)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::UART0_Rx)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
       ->transferSize(4)
       ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+
+  rx_dma_cfg[1].channelNum(MODDMA::Channel_2)
+      ->transferType(MODDMA::p2m)
+      ->srcConn(MODDMA::UART0_Rx)
+      ->dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
+      ->transferSize(4)
+      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+
+  // Configure TX DMA channel
+  tx_dma_cfg.channelNum(MODDMA::Channel_0)
+      ->transferType(MODDMA::m2p)
+      ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[0].buffer[0]))
+      ->dstConn(MODDMA::UART0_Tx)
+      ->transferSize(XFER_BUF_SIZE)
+      ->attach_tc(this, &SerialComms::on_tx_dma_tc);
+
+  dma.Prepare(&rx_dma_cfg[0]);
+  rx_dma_ch_idx = 0;
+}
+
+void SerialComms::on_tx_dma_tc() {
+  dma.Disable(dma.irqProcessingChannel());
+  dma.clearTcIrq();
+  tx_in_progress = false;
+  tx_tc++;
+}
+
+void SerialComms::start_rx_dma_read_token() {
+  header_rearm_calls++;
+  const uint8_t next = rx_dma_ch_idx ^ 1u;
+
+  rx_dma_cfg[next].dstMemAddr(reinterpret_cast<uint32_t>(&read_token_storage))
+      ->transferSize(4);
   dma.Prepare(&rx_dma_cfg[next]);
   header_prepare_calls++;
-  dma.Enable(ch);
-  header_enable_calls++;
-  // Snapshot DMA/UART state for debugging
-  dbg_rx_enabled = dma.Enabled(ch);
-  dbg_rx_active  = dma.isActive(ch);
-  dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
-  dbg_lsr = uart->LSR;
+
+  rx_dma_ch_idx = next;
 }
 
 void SerialComms::start_rx_dma_payload58() {
-  // We already captured the 4-byte header into current_header; store it and fetch the remaining 58 bytes
   rx_buf[rx_fill_idx].header = current_header;
-  core_util_critical_section_enter();
   const uint8_t next = rx_dma_ch_idx ^ 1u;
-  rx_dma_ch_idx = next;  // Update index before enabling to prevent race
-  core_util_critical_section_exit();
 
-  MODDMA::CHANNELS ch = RX_DMA_CHANNELS[next];
-  rx_dma_cfg[next].channelNum(ch)
-      ->transferType(MODDMA::p2m)
-      ->srcConn(MODDMA::UART0_Rx)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[4]))
-      ->transferSize(XFER_BUF_SIZE - 4)
-      ->attach_tc(this, &SerialComms::on_rx_dma_tc);
+  rx_dma_cfg[next].dstMemAddr(reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[4]))
+      ->transferSize(XFER_BUF_SIZE - 4);
   dma.Prepare(&rx_dma_cfg[next]);
   payload_prepare_calls++;
-  dma.Enable(ch);
-  payload_enable_calls++;
-  dbg_rx_enabled = dma.Enabled(ch);
-  dbg_rx_active  = dma.isActive(ch);
-  dbg_enbld_chns = LPC_GPDMA->DMACEnbldChns;
-  dbg_lsr = uart->LSR;
+
+  rx_dma_ch_idx = next;
 }
 
 bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel, float* init_pos_mu) {
@@ -122,10 +115,8 @@ bool SerialComms::take_stepgen_conf(int axis, float* pos_scale, float* maxaccel,
 }
 
 void SerialComms::on_rx_dma_tc() {
+  dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
-  // Explicitly disable the channel that just completed to prevent MODDMA from auto-disabling it after callback
-  MODDMA::CHANNELS current_ch = RX_DMA_CHANNELS[rx_dma_ch_idx];
-  dma.Disable(current_ch);
 
   if (rx_phase == RxPhase::ExpectHeader) {
     current_header = read_token_storage;
@@ -133,8 +124,8 @@ void SerialComms::on_rx_dma_tc() {
     rx_header_tc++;
     switch (current_header) {
       case PRU_READ:
-        // Immediate reply with current state, no RX payload follows
-        read_token_ok_count++; tx_frames++;
+        read_token_ok_count++;
+        tx_frames++;
         if (!tx_in_progress) {
           const uint8_t send_idx = (pru_state == &tx_buf[0]) ? 0u : 1u;
           core_util_critical_section_enter();
@@ -145,18 +136,11 @@ void SerialComms::on_rx_dma_tc() {
           tx_send_idx = send_idx;
           tx_fill_idx = send_idx ^ 1u;
           tx_in_progress = true;
-          tx_dma_cfg.channelNum(MODDMA::Channel_0)
-              ->transferType(MODDMA::m2p)
-              ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]))
-              ->dstConn(MODDMA::UART0_Tx)
-              ->transferSize(XFER_BUF_SIZE)
-              ->attach_tc(this, &SerialComms::on_tx_dma_tc);
+          tx_dma_cfg.srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]));
           dma.Prepare(&tx_dma_cfg);
-          dma.Enable(MODDMA::Channel_0);
         } else {
           tx_skipped_busy++;
         }
-        // Next: wait for another header (likely PRU_WRITE)
         rx_phase = RxPhase::ExpectHeader;
         start_rx_dma_read_token();
         return;
@@ -164,7 +148,6 @@ void SerialComms::on_rx_dma_tc() {
       case PRU_DATA:
       case PRU_WRITE:
       case PRU_CONF:
-        // We have the header; fetch the remaining 58 bytes into the buffer
         rx_phase = RxPhase::ExpectPayload;
         start_rx_dma_payload58();
         return;
@@ -177,11 +160,9 @@ void SerialComms::on_rx_dma_tc() {
     }
   }
 
-  // ExpectPayload: 58 bytes just arrived, assemble full frame and act on header
   rx_payload_tc++;
   const uint32_t hdr = current_header;
   if (hdr == PRU_DATA) {
-    // Pipelined behavior: publish command, reply with state
     const uint8_t ready_idx = rx_fill_idx;
     core_util_critical_section_enter();
     __DMB();
@@ -190,7 +171,8 @@ void SerialComms::on_rx_dma_tc() {
     core_util_critical_section_exit();
     rx_ready_idx = ready_idx;
     rx_fill_idx = ready_idx ^ 1u;
-    rx_frames++; this->data_ready_callback();
+    rx_frames++;
+    this->data_ready_callback();
 
     if (!tx_in_progress) {
       const uint8_t send_idx = (pru_state == &tx_buf[0]) ? 0u : 1u;
@@ -202,17 +184,10 @@ void SerialComms::on_rx_dma_tc() {
       tx_send_idx = send_idx;
       tx_fill_idx = send_idx ^ 1u;
       tx_in_progress = true;
-      tx_dma_cfg.channelNum(MODDMA::Channel_0)
-          ->transferType(MODDMA::m2p)
-          ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]))
-          ->dstConn(MODDMA::UART0_Tx)
-          ->transferSize(XFER_BUF_SIZE)
-          ->attach_tc(this, &SerialComms::on_tx_dma_tc);
+      tx_dma_cfg.srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf[tx_send_idx].buffer[0]));
       dma.Prepare(&tx_dma_cfg);
-      dma.Enable(MODDMA::Channel_0);
     }
   } else if (hdr == PRU_WRITE) {
-    // Same-tick command: publish command, no reply
     const uint8_t ready_idx = rx_fill_idx;
     core_util_critical_section_enter();
     __DMB();
@@ -221,9 +196,9 @@ void SerialComms::on_rx_dma_tc() {
     core_util_critical_section_exit();
     rx_ready_idx = ready_idx;
     rx_fill_idx = ready_idx ^ 1u;
-    rx_frames++; this->data_ready_callback();
+    rx_frames++;
+    this->data_ready_callback();
   } else if (hdr == PRU_CONF) {
-    // Config frame: update parameters, no reply
     const volatile linuxCncConf_t* c = reinterpret_cast<volatile linuxCncConf_t*>(&rx_buf[rx_fill_idx]);
     for (int i = 0; i < STEPGENS; ++i) {
       conf_position_scale[i] = c->stepper_position_scale[i];
@@ -232,16 +207,14 @@ void SerialComms::on_rx_dma_tc() {
     }
     servo_period_s = c->servo_period_s;
     conf_pending_mask = (STEPGENS >= 32) ? 0xFFFFFFFFu : ((1u << STEPGENS) - 1u);
-    // Rotate fill buffer to avoid overwrite
     rx_fill_idx ^= 1u;
-    rx_frames++; this->data_ready_callback();
+    rx_frames++;
+    this->data_ready_callback();
   } else {
-    // Unexpected header; count and rotate
     bad_header_count++;
     rx_fill_idx ^= 1u;
   }
 
-  // After any 62B frame, go back to header reception
   rx_phase = RxPhase::ExpectHeader;
   start_rx_dma_read_token();
 }
