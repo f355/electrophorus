@@ -94,14 +94,24 @@ void SerialComms::on_tx_dma_tc() {
 
 void SerialComms::start_rx_dma_read_token() {
   header_rearm_calls++;
-  dma.Enable(rx_header_dma_cfg[next_header_ch].channelNum());
+  // Directly write to channel registers to avoid modifying global GPDMA state
+  uint32_t ch_num = rx_header_dma_cfg[next_header_ch].channelNum();
+  LPC_GPDMACH_TypeDef* pChannel = (LPC_GPDMACH_TypeDef*)(LPC_GPDMACH0_BASE + (0x20 * ch_num));
+  pChannel->DMACCDestAddr = reinterpret_cast<uint32_t>(&read_token_storage);
+  pChannel->DMACCControl = (pChannel->DMACCControl & ~0xFFF) | 4;  // Update transfer size to 4
+  pChannel->DMACCConfig |= 1;  // Enable
   header_prepare_calls++;
   next_header_ch ^= 1u;
 }
 
 void SerialComms::start_rx_dma_payload58() {
   rx_buf[rx_fill_idx].header = current_header;
-  dma.Enable(rx_payload_dma_cfg[rx_fill_idx].channelNum());
+  // Directly write to channel registers to avoid modifying global GPDMA state
+  uint32_t ch_num = rx_payload_dma_cfg[rx_fill_idx].channelNum();
+  LPC_GPDMACH_TypeDef* pChannel = (LPC_GPDMACH_TypeDef*)(LPC_GPDMACH0_BASE + (0x20 * ch_num));
+  pChannel->DMACCDestAddr = reinterpret_cast<uint32_t>(&rx_buf[rx_fill_idx].buffer[4]);
+  pChannel->DMACCControl = (pChannel->DMACCControl & ~0xFFF) | (XFER_BUF_SIZE - 4);  // Update transfer size to 58
+  pChannel->DMACCConfig |= 1;  // Enable
   payload_prepare_calls++;
 }
 
