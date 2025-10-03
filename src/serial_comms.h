@@ -60,6 +60,9 @@ class SerialComms final {
   volatile uint32_t rx_frames = 0;
   volatile uint32_t rx_crc_fail = 0;
   volatile uint32_t rx_overrun_errors = 0;  // LSR.OE occurrences
+
+  // Last host-provided timestamp (us mod 65536) to echo back
+  volatile uint16_t last_host_timestamp = 0;
 };
 
 #endif  // SERIAL_COMMS_H

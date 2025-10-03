@@ -382,6 +382,97 @@ static inline int32_t rtt_percentile_1m(double p) {
 
 
 
+// Frame age (us) histogram — only 1m window
+#define AGE_MAX_US 6000
+#define AGE_BIN_WIDTH_US 10
+#define AGE_BIN_COUNT ((AGE_MAX_US / AGE_BIN_WIDTH_US) + 2) // +under/+over
+
+static uint32_t age_hist_1m[AGE_BIN_COUNT];
+static int age_1m_size = 60000; // aligned to metric_1m_size at push
+static int age_1m_count = 0, age_1m_head = 0;
+static int32_t age_1m_ring[METRIC_1M_MAX_SAMPLES];
+
+static inline int age_bin_index_age(const int32_t age_us) {
+  // Treat > 3 servo periods as infinity
+  int32_t thr = (int32_t)((servo_center_us > 0 ? 3 * servo_center_us : 3000));
+  if (thr > AGE_MAX_US) thr = AGE_MAX_US;
+  if (age_us < 0) return 0;
+  if (age_us > thr) return AGE_BIN_COUNT - 1;
+  int idx = (age_us / AGE_BIN_WIDTH_US) + 1;
+  if (idx < 1) idx = 1;
+  if (idx > AGE_BIN_COUNT - 2) idx = AGE_BIN_COUNT - 2;
+  return idx;
+}
+
+static inline void age_reset_all_internal(void) {
+  memset(age_hist_1m, 0, sizeof(age_hist_1m));
+  age_1m_count = 0; age_1m_head = 0; age_1m_size = metric_1m_size;
+}
+
+static inline void metrics_update_age_outputs(state_t *state) {
+  // p50/p95/p99 from 1m histogram
+  if (age_1m_count <= 0) {
+    *state->age_us_1m_p50 = 0;
+    *state->age_us_1m_p95 = 0;
+    *state->age_us_1m_p99 = 0;
+    return;
+  }
+  uint32_t target50 = (uint32_t)ceil(0.50 * age_1m_count);
+  uint32_t target95 = (uint32_t)ceil(0.95 * age_1m_count);
+  uint32_t target99 = (uint32_t)ceil(0.99 * age_1m_count);
+  uint32_t acc = 0; int p50 = 0, p95 = 0, p99 = 0;
+  for (int b = 0; b < AGE_BIN_COUNT; ++b) {
+    acc += age_hist_1m[b];
+    if (!p50 && acc >= target50) {
+      if (b == 0) p50 = 0; else if (b == AGE_BIN_COUNT - 1) p50 = (int)(3 * (servo_center_us ? servo_center_us : 1000)); else p50 = (b - 1) * AGE_BIN_WIDTH_US;
+    }
+    if (!p95 && acc >= target95) {
+      if (b == 0) p95 = 0; else if (b == AGE_BIN_COUNT - 1) p95 = (int)(3 * (servo_center_us ? servo_center_us : 1000)); else p95 = (b - 1) * AGE_BIN_WIDTH_US;
+    }
+    if (!p99 && acc >= target99) {
+      if (b == 0) p99 = 0; else if (b == AGE_BIN_COUNT - 1) p99 = (int)(3 * (servo_center_us ? servo_center_us : 1000)); else p99 = (b - 1) * AGE_BIN_WIDTH_US;
+      break;
+    }
+  }
+  *state->age_us_1m_p50 = p50;
+  *state->age_us_1m_p95 = p95;
+  *state->age_us_1m_p99 = p99;
+}
+
+void metrics_age_sample(state_t *state, const int32_t age_us) {
+  // align 1m window size to metric_1m_size
+  if (age_1m_size != metric_1m_size) {
+    // Drop oldest if shrinking
+    if (age_1m_count > metric_1m_size) {
+      int drop = age_1m_count - metric_1m_size;
+      for (int i = 0; i < drop; ++i) {
+        int oldest_idx = age_1m_head - age_1m_count;
+        while (oldest_idx < 0) oldest_idx += METRIC_1M_MAX_SAMPLES;
+        int32_t ov = age_1m_ring[oldest_idx];
+        int ob = age_bin_index_age(ov);
+        if (age_hist_1m[ob] > 0) age_hist_1m[ob]--;
+        age_1m_count--;
+      }
+    }
+    age_1m_size = metric_1m_size;
+  }
+  // 1m sliding window update
+  if (age_1m_count == age_1m_size) {
+    int32_t old = age_1m_ring[age_1m_head];
+    int ob = age_bin_index_age(old);
+    if (age_hist_1m[ob] > 0) age_hist_1m[ob]--;
+  } else {
+    age_1m_count++;
+  }
+  age_1m_ring[age_1m_head] = age_us;
+  int nb = age_bin_index_age(age_us);
+  age_hist_1m[nb]++;
+  age_1m_head = (age_1m_head + 1) % METRIC_1M_MAX_SAMPLES;
+
+  metrics_update_age_outputs(state);
+}
+
+
 static inline void metrics_update_servo_outputs(state_t *state) {
   if (servo_count <= 0) {
     *state->servo_us_1s_min = 0;
@@ -463,6 +554,12 @@ static inline void metrics_update_rtt_outputs(state_t *state) {
     *state->rtt_us_1m_p50 = 0;
     *state->rtt_us_1m_p95 = 0;
     *state->rtt_us_1m_p99 = 0;
+  // 1-minute frame age (us)
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p50, comp_id, "%s.metrics.frame-age-us.1m.p50", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p95, comp_id, "%s.metrics.frame-age-us.1m.p95", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p99, comp_id, "%s.metrics.frame-age-us.1m.p99", prefix))) return -1;
+
+
     *state->rtt_us_1m_p99_9 = 0;
   } else {
     double mean = (double)rtt_1m_sum / (double)rtt_1m_count;
@@ -557,6 +654,11 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
 
   // counters under metrics as well
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_frames_ok, comp_id, "%s.metrics.frames-ok", prefix))) return -1;
+  // 1-minute frame age (us)
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p50, comp_id, "%s.metrics.frame-age-us.1m.p50", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p95, comp_id, "%s.metrics.frame-age-us.1m.p95", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p99, comp_id, "%s.metrics.frame-age-us.1m.p99", prefix))) return -1;
+
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_bad_header, comp_id, "%s.metrics.bad-header", prefix)))
     return -1;
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_read_errors, comp_id, "%s.metrics.read-errors", prefix)))
@@ -597,6 +699,11 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
   *state->rtt_us_1m_p95 = 0;
   *state->rtt_us_1m_p99 = 0;
   *state->rtt_us_1m_p99_9 = 0;
+
+  *state->age_us_1m_p50 = 0;
+  *state->age_us_1m_p95 = 0;
+  *state->age_us_1m_p99 = 0;
+
 
   *state->metric_frames_ok = 0;
   *state->metric_bad_header = 0;

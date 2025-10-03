@@ -95,6 +95,8 @@ void SerialComms::on_tx_dma(volatile pruState_t* our_buf, volatile pruState_t* o
 
   pru_state = our_buf;
 
+  // Echo the last host timestamp into the next frame before computing CRC
+  other_buf->timestamp = last_host_timestamp;
   const volatile uint8_t* start = reinterpret_cast<const volatile uint8_t*>(other_buf) + 4;
   other_buf->crc = crc32_ieee(start, sizeof(pruState_t) - 8);
 
@@ -150,6 +152,8 @@ void SerialComms::poll_rx_nonblocking() {
     if (frame->crc == crc32_ieee(start, RX_FRAME_SIZE - 8)) {
       // Copy out a valid frame and publish
       memcpy(rx_cpu_fill, rx_buf + i, RX_FRAME_SIZE);
+      // Stash the host-provided timestamp for echoing back
+      last_host_timestamp = rx_cpu_fill->timestamp;
       linuxcnc_state = rx_cpu_fill;
       ++rx_frames;
       data_ready_callback();

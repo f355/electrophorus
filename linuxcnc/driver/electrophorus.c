@@ -122,6 +122,11 @@ typedef struct {
   hal_s32_t *rtt_us_1m_p99;
   hal_s32_t *rtt_us_1m_p99_9;
 
+  // Frame age (us) — 1m window
+  hal_s32_t *age_us_1m_p50;
+  hal_s32_t *age_us_1m_p95;
+  hal_s32_t *age_us_1m_p99;
+
   // counters
   hal_s32_t *metric_frames_ok;
   hal_s32_t *metric_bad_header;
@@ -652,6 +657,16 @@ static void uart_read() {
     return;
   }
 
+  // Compute packet age (us) from echoed 16-bit timestamp
+  {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
+    uint16_t now16 = (uint16_t)(now_us & 0xFFFFu);
+    uint16_t ts16 = pru_state.timestamp;
+    int32_t age_us = (int32_t)((uint16_t)(now16 - ts16));  // modulo-16-bit difference
+    metrics_age_sample(state, age_us);
+  }
+
   *state->comms_status = 1;
   (*state->metric_frames_ok)++;
 
@@ -711,6 +726,12 @@ static void uart_write() {
   // TX: build and write one frame; attempt to queue the whole frame this tick
   linuxCncState_t tx = linuxcnc_state;
   tx.header = PRU_WRITE;
+  // Fill 16-bit timestamp in microseconds (mod 65536) from CLOCK_MONOTONIC_RAW
+  {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+    uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
+    tx.timestamp = (uint16_t)(now_us & 0xFFFFu);
+  }
   tx.crc = crc32_ieee(((const uint8_t *)&tx) + 4, sizeof(linuxCncState_t) - 8);
 
   const uint8_t *p = (const uint8_t *)&tx;

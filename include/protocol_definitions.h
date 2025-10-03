@@ -23,6 +23,7 @@ typedef struct {
   int64_t stepgen_feedback[STEPGENS];
   int32_t input_vars[INPUT_VARS];
   uint16_t inputs;
+  uint16_t timestamp;  // linuxcnc-provided us timestamp echo
   uint32_t crc;
 } pruState_t;
 
@@ -33,6 +34,7 @@ typedef struct {
   int32_t output_vars[OUTPUT_VARS];
   uint8_t stepgen_enable_mask;
   uint16_t outputs;
+  uint16_t timestamp;  // linuxcnc-provided us timestamp (mod 65536)
   uint32_t crc;
 } linuxCncState_t;
 
