@@ -32,6 +32,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <linux/serial.h>
+
 #include "hal.h"
 #include "protocol_definitions.h"
 #include "rtapi.h"
@@ -568,6 +570,13 @@ static int uart_open_config(void) {
 
   // Ensure non-blocking mode
   const int flags = fcntl(fd, F_GETFL, 0);
+  // Request low-latency delivery from the serial driver if supported
+  struct serial_struct ser = {0};
+  if (ioctl(fd, TIOCGSERIAL, &ser) == 0) {
+    ser.flags |= ASYNC_LOW_LATENCY;
+    (void)ioctl(fd, TIOCSSERIAL, &ser);
+  }
+
   if (flags >= 0 && !(flags & O_NONBLOCK)) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
   uart_fd = fd;
