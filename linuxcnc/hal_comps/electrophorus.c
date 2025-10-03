@@ -31,23 +31,12 @@
 #include "rtapi.h"
 #include "rtapi_app.h"
 
-// Using BCM2835 driver library by Mike McCauley, why reinvent the wheel!
-// http://www.airspayce.com/mikem/bcm2835/index.html
-// Include these in the source directory when using "halcompile --install electrophorus.c"
-#include "bcm2835.c"
-#include "bcm2835.h"
-
-// Raspberry Pi 5 uses the RP1
-#include "dtcboards.h"
-#include "gpiochip_rp1.c"
-#include "gpiochip_rp1.h"
-#include "rp1lib.c"
-#include "rp1lib.h"
-#include "spi-dw.c"
-#include "spi-dw.h"
+// SPI drivers
+#include "spi/rpi4_spi.c"
+#include "spi/rpi5_spi.c"
 
 // data structures for SPI rx/tx
-#include "spi_data.h"
+#include "../../include/spi_data.h"
 
 #define MODNAME "electrophorus"
 #define PREFIX "carvera"
@@ -55,8 +44,6 @@
 MODULE_AUTHOR("Scott Alford AKA scotta, modified by Konstantin Tcepliaev <f355@f355.org>");
 MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");
 MODULE_LICENSE("GPL v3");
-
-#define RPI5_RP1_PERI_BASE 0x7c000000
 
 #define f_period_s ((double)(l_period_ns * 1e-9))
 
@@ -116,12 +103,10 @@ static int comp_id;  // component ID
 static const char *modname = MODNAME;
 static const char *prefix = PREFIX;
 
-enum { DRV_UNKNOWN = 0, DRV_BCM, DRV_RP1 } spi_driver = DRV_UNKNOWN;
+enum { SPI_UNKNOWN = 0, SPI_RPI4, SPI_RPI5 } spi_driver = SPI_UNKNOWN;
 
 static bool pin_err(int retval);
 static int rt_peripheral_init();
-static int rt_bcm2835_init();
-static int rt_rp1lib_init();
 
 static void update_freq(void *arg, long l_period_ns);
 static void spi_write();
@@ -565,17 +550,11 @@ void spi_write() {
 
 void spi_transfer() {
   switch (spi_driver) {
-    case DRV_BCM:
-      // TODO(f355): why transfer byte by byte?
-      // bcm2835_spi_transfernb(tx_data.buffer, rx_data.buffer, SPI_BUF_SIZE);
-      for (int i = 0; i < SPI_BUF_SIZE; i++) {
-        rx_data.buffer[i] = bcm2835_spi_transfer(tx_data.buffer[i]);
-      }
+    case SPI_RPI4:
+      rpi4_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
       break;
-    case DRV_RP1:
-      for (int i = 0; i < SPI_BUF_SIZE; i++) {
-        rp1spi_transfer(0, tx_data.buffer + i, rx_data.buffer + i, 1);
-      }
+    case SPI_RPI5:
+      rpi5_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
       break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");
@@ -583,249 +562,22 @@ void spi_transfer() {
 }
 
 int rt_peripheral_init(void) {
-  char buf[256];
-  const int DTC_MAX = 8;
-  const char *dtcs[DTC_MAX + 1];
-
-  // assume were only running on >RPi3
-
-  FILE *fp = fopen("/proc/device-tree/compatible", "rb");
-  if (!fp) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "Cannot open '/proc/device-tree/compatible' for read.\n");
-    return -1;
+  int ret5 = rpi5_spi_init(5000000);
+  if (ret5 == 1) {
+    rtapi_print_msg(RTAPI_MSG_INFO, "Raspberry Pi 5, using rpi5 spi driver\n");
+    spi_driver = SPI_RPI5;
+    return 0;
   }
 
-  // Read the 'compatible' string-list from the device-tree
-  const size_t buflen = fread(buf, 1, sizeof(buf), fp);
-  if (buflen == 0) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "Failed to read platform identity.\n");
-    return -1;
-  }
-  fclose(fp);
-
-  // Decompose the device-tree buffer into a string-list with the pointers to
-  // each string in dtcs. Don't go beyond the buffer's size.
-  memset(dtcs, 0, sizeof(dtcs));
-  char *cptr = buf;
-  for (int i = 0; i < DTC_MAX && cptr; i++) {
-    dtcs[i] = cptr;
-    const size_t j = strlen(cptr);
-    if ((cptr - buf) + j + 1 < buflen)
-      cptr += j + 1;
-    else
-      cptr = NULL;
+  int ret4 = rpi4_spi_init(5000000);
+  if (ret4 == 1) {
+    rtapi_print_msg(RTAPI_MSG_INFO, "Raspberry Pi 4, using rpi4 spi driver\n");
+    spi_driver = SPI_RPI4;
+    return 0;
   }
 
-  for (int i = 0; dtcs[i] != NULL; i++) {
-    if (!strcmp(dtcs[i], DTC_RPI_MODEL_4B) || !strcmp(dtcs[i], DTC_RPI_MODEL_4CM) ||
-        !strcmp(dtcs[i], DTC_RPI_MODEL_400)) {
-      rtapi_print_msg(RTAPI_MSG_INFO, "Raspberry Pi 4, using BCM2835 driver\n");
-      spi_driver = DRV_BCM;
-      break;  // Found our supported board
-    }
-    if (!strcmp(dtcs[i], DTC_RPI_MODEL_5B) || !strcmp(dtcs[i], DTC_RPI_MODEL_5CM)) {
-      rtapi_print_msg(RTAPI_MSG_INFO, "Raspberry Pi 5, using rp1 driver\n");
-      spi_driver = DRV_RP1;
-      break;  // Found our supported board
-    }
-  }
-
-  if (spi_driver == DRV_UNKNOWN) {
-    rtapi_print_msg(RTAPI_MSG_ERR, "Error, RPi not detected\n");
-    return -1;
-  }
-
-  switch (spi_driver) {
-    case DRV_BCM:
-      // Map the RPi BCM2835 peripherals - uses "rtapi_open_as_root" in place of "open"
-      if (!rt_bcm2835_init()) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "rt_bcm2835_init failed. Are you running with root privileges??\n");
-        return -1;
-      }
-
-      // Set the SPI0 pins to the Alt 0 function to enable SPI0 access, setup CS register
-      // and clear TX and RX fifos
-      if (!bcm2835_spi_begin()) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "bcm2835_spi_begin failed. Are you running with root privlages??\n");
-        return -1;
-      }
-
-      // Configure SPI0
-      bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);  // The default
-      bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);               // The default
-
-      // bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_128);
-      bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_64);
-      // bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_32);
-      // bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_16);
-
-      bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                  // The default
-      bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);  // the default
-
-      /* RPI_GPIO_P1_19        = 10 		MOSI when SPI0 in use
-       * RPI_GPIO_P1_21        =  9 		MISO when SPI0 in use
-       * RPI_GPIO_P1_23        = 11 		CLK when SPI0 in use
-       * RPI_GPIO_P1_24        =  8 		CE0 when SPI0 in use
-       * RPI_GPIO_P1_26        =  7 		CE1 when SPI0 in use
-       */
-
-      // Configure pullups on SPI0 pins - source termination and CS high (does this allows for higher clock
-      // frequencies??? wiring is more important here)
-      bcm2835_gpio_set_pud(RPI_GPIO_P1_19, BCM2835_GPIO_PUD_DOWN);  // MOSI
-      bcm2835_gpio_set_pud(RPI_GPIO_P1_21, BCM2835_GPIO_PUD_DOWN);  // MISO
-      bcm2835_gpio_set_pud(RPI_GPIO_P1_24, BCM2835_GPIO_PUD_UP);    // CS0
-      break;
-    case DRV_RP1:
-      if (!rt_rp1lib_init()) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "rt_rp1_init failed.\n");
-        return -1;
-      }
-
-      if (rp1spi_init(0, 0, SPI_MODE_0, 5000000) != 1)  // SPIx, CSx, mode, freq
-      {
-        rtapi_print_msg(RTAPI_MSG_ERR, "rp1spi_init failed.\n");
-        return -1;
-      }
-      break;
-    default:
-      return -1;
-  }
-  return 0;
-}
-
-// This is the same as the standard bcm2835 library except for the use of
-// "rtapi_open_as_root" in place of "open"
-
-int rt_bcm2835_init(void) {
-  FILE *fp;
-
-  if (debug) {
-    bcm2835_peripherals = (uint32_t *)BCM2835_PERI_BASE;
-
-    bcm2835_pads = bcm2835_peripherals + BCM2835_GPIO_PADS / 4;
-    bcm2835_clk = bcm2835_peripherals + BCM2835_CLOCK_BASE / 4;
-    bcm2835_gpio = bcm2835_peripherals + BCM2835_GPIO_BASE / 4;
-    bcm2835_pwm = bcm2835_peripherals + BCM2835_GPIO_PWM / 4;
-    bcm2835_spi0 = bcm2835_peripherals + BCM2835_SPI0_BASE / 4;
-    bcm2835_bsc0 = bcm2835_peripherals + BCM2835_BSC0_BASE / 4;
-    bcm2835_bsc1 = bcm2835_peripherals + BCM2835_BSC1_BASE / 4;
-    bcm2835_st = bcm2835_peripherals + BCM2835_ST_BASE / 4;
-    bcm2835_aux = bcm2835_peripherals + BCM2835_AUX_BASE / 4;
-    bcm2835_spi1 = bcm2835_peripherals + BCM2835_SPI1_BASE / 4;
-
-    return 1; /* Success */
-  }
-
-  /* Figure out the base and size of the peripheral address block
-  // using the device-tree. Required for RPi2/3/4, optional for RPi 1
-  */
-  if ((fp = fopen(BMC2835_RPI2_DT_FILENAME, "rb"))) {
-    unsigned char buf[16];
-    if (fread(buf, 1, sizeof(buf), fp) >= 8) {
-      uint32_t base_address = buf[4] << 24 | buf[5] << 16 | buf[6] << 8 | buf[7] << 0;
-
-      uint32_t peri_size = buf[8] << 24 | buf[9] << 16 | buf[10] << 8 | buf[11] << 0;
-
-      if (!base_address) {
-        /* looks like RPI 4 */
-        base_address = buf[8] << 24 | buf[9] << 16 | buf[10] << 8 | buf[11] << 0;
-
-        peri_size = buf[12] << 24 | buf[13] << 16 | buf[14] << 8 | buf[15] << 0;
-      }
-      /* check for valid known range formats */
-      if (buf[0] == 0x7e && buf[1] == 0x00 && buf[2] == 0x00 && buf[3] == 0x00 &&
-          (base_address == BCM2835_PERI_BASE || base_address == BCM2835_RPI2_PERI_BASE ||
-           base_address == BCM2835_RPI4_PERI_BASE)) {
-        bcm2835_peripherals_base = (off_t)base_address;
-        bcm2835_peripherals_size = (size_t)peri_size;
-        if (base_address == BCM2835_RPI4_PERI_BASE) {
-          pud_type_rpi4 = 1;
-        }
-      }
-    }
-
-    fclose(fp);
-  }
-  /* Now get ready to map the peripherals block
-   * If we are not root, try for the new /dev/gpiomem interface and accept
-   * the fact that we can only access GPIO
-   * else try for the /dev/mem interface and get access to everything
-   */
-  int memfd;
-  int ok = 0;
-  if (geteuid() == 0) {
-    /* Open the master /dev/mem device */
-    if ((memfd = rtapi_open_as_root("/dev/mem", O_RDWR | O_SYNC)) < 0) {
-      fprintf(stderr, "bcm2835_init: Unable to open /dev/mem: %s\n", strerror(errno));
-      goto exit;
-    }
-
-    /* Base of the peripherals block is mapped to VM */
-    bcm2835_peripherals = mapmem("gpio", bcm2835_peripherals_size, memfd, bcm2835_peripherals_base);
-    if (bcm2835_peripherals == MAP_FAILED) goto exit;
-
-    /* Now compute the base addresses of various peripherals,
-    // which are at fixed offsets within the mapped peripherals block
-    // Caution: bcm2835_peripherals is uint32_t*, so divide offsets by 4
-    */
-    bcm2835_gpio = bcm2835_peripherals + BCM2835_GPIO_BASE / 4;
-    bcm2835_pwm = bcm2835_peripherals + BCM2835_GPIO_PWM / 4;
-    bcm2835_clk = bcm2835_peripherals + BCM2835_CLOCK_BASE / 4;
-    bcm2835_pads = bcm2835_peripherals + BCM2835_GPIO_PADS / 4;
-    bcm2835_spi0 = bcm2835_peripherals + BCM2835_SPI0_BASE / 4;
-    bcm2835_bsc0 = bcm2835_peripherals + BCM2835_BSC0_BASE / 4; /* I2C */
-    bcm2835_bsc1 = bcm2835_peripherals + BCM2835_BSC1_BASE / 4; /* I2C */
-    bcm2835_st = bcm2835_peripherals + BCM2835_ST_BASE / 4;
-    bcm2835_aux = bcm2835_peripherals + BCM2835_AUX_BASE / 4;
-    bcm2835_spi1 = bcm2835_peripherals + BCM2835_SPI1_BASE / 4;
-
-    ok = 1;
-  } else {
-    /* Not root, try /dev/gpiomem */
-    /* Open the master /dev/mem device */
-    if ((memfd = open("/dev/gpiomem", O_RDWR | O_SYNC)) < 0) {
-      fprintf(stderr, "bcm2835_init: Unable to open /dev/gpiomem: %s\n", strerror(errno));
-      goto exit;
-    }
-
-    /* Base of the peripherals block is mapped to VM */
-    bcm2835_peripherals_base = 0;
-    bcm2835_peripherals = mapmem("gpio", bcm2835_peripherals_size, memfd, bcm2835_peripherals_base);
-    if (bcm2835_peripherals == MAP_FAILED) goto exit;
-    bcm2835_gpio = bcm2835_peripherals;
-    ok = 1;
-  }
-
-exit:
-  if (memfd >= 0) close(memfd);
-
-  if (!ok) bcm2835_close();
-
-  return ok;
-}
-
-int rt_rp1lib_init(void) {
-  const uint64_t phys_addr = RP1_BAR1;
-
-  DEBUG_PRINT("Initialising RP1 library: %s\n", __func__);
-
-  // rp1_chip is declared in gpiochip_rp1.c
-  chip = &rp1_chip;
-
-  inst = rp1_create_instance(chip, phys_addr, NULL);
-  if (!inst) return -1;
-
-  inst->phys_addr = phys_addr;
-
-  // map memory
-  inst->mem_fd = rtapi_open_as_root("/dev/mem", O_RDWR | O_SYNC);
-  if (inst->mem_fd < 0) return errno;
-
-  inst->priv = mmap(NULL, RP1_BAR1_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, inst->mem_fd, (int64_t)inst->phys_addr);
-
-  DEBUG_PRINT("Base address: %11lx, size: %x, mapped at address: %p\n", inst->phys_addr, RP1_BAR1_LEN, inst->priv);
-
-  if (inst->priv == MAP_FAILED) return errno;
-
-  return 1;
+  if (ret5 < 0) rtapi_print_msg(RTAPI_MSG_ERR, "rpi5_spi_init failed (%d).\n", ret5);
+  if (ret4 < 0) rtapi_print_msg(RTAPI_MSG_ERR, "rpi4_spi_init failed (%d).\n", ret4);
+  rtapi_print_msg(RTAPI_MSG_ERR, "Error: no SPI driver available (need root/CAP_SYS_RAWIO for /dev/mem).\n");
+  return -1;
 }
