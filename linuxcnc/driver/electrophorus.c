@@ -633,9 +633,11 @@ static void uart_read() {
 
   *state->comms_ready = 1;
 
-  // RX: drain all available bytes and pick the last good frame in this chunk
-  uint8_t buf[512];
+  // RX: drain available bytes, bounded linger to catch just-arrived data; pick last good frame
+  uint8_t buf[4096];
   int n = 0;
+  struct timespec rd_start; clock_gettime(CLOCK_MONOTONIC_RAW, &rd_start);
+  // initial nonblocking drain
   for (;;) {
     const ssize_t r = read(uart_fd, buf + n, (int)sizeof(buf) - n);
     if (r > 0) {
@@ -645,7 +647,7 @@ static void uart_read() {
     }
     if (r < 0 && (errno == EINTR)) continue;
     if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
-    break;  // r == 0 or other error: stop draining
+    break;  // r == 0 or other error
   }
 
   int have_frame = 0;
