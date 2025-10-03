@@ -141,6 +141,18 @@ download it, rename it to `firmware.bin` and put it on the SD card.
 
 Coming soon, carefuling is in progress.
 
+## License
+
+This project is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later), except where a file
+header explicitly states a different license. Third-party components retain their original licenses; see individual file
+headers. See [LICENSE.md](LICENSE.md).
+
+Non-binding notice (for the avoidance of doubt, not a license term and imposing no additional restrictions under
+GPL-3.0-or-later): the author requests that Makera Inc. (maker of the Carvera/Makera family of CNC machines) and
+affiliated entities refrain from using this work, unless and until they demonstrably and on an ongoing basis adhere to
+the principles of open-source licensing in their own work; entities seeking alternative rights may contact the author to
+negotiate a separate dual-licensing agreement.
+
 ## Historical: Remora - the original README
 
 The full documentation is at <https://remora-docs.readthedocs.io/en/latest/>
