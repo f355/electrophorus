@@ -729,7 +729,7 @@ static void uart_read() {
           pos += snprintf(line + pos, sizeof(line) - (size_t)pos, " %u", (unsigned)d);
           if (pos >= (int)sizeof(line)) break;
         }
-        RTAPI_PRINT("%s\n", line);
+        rtapi_print("%s\n", line);
       }
     }
   }
