@@ -678,6 +678,10 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
     return -1;
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_write_errors, comp_id, "%s.metrics.write-errors", prefix)))
     return -1;
+  // TX instrumentation pins
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->tx_outq_after, comp_id, "%s.metrics.uart-tx.outq-after", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->tx_bytes, comp_id, "%s.metrics.uart-tx.bytes", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_ticks_last, comp_id, "%s.metrics.frame-age-ticks.last", prefix))) return -1;
 
   // initial values
   *state->metrics_reset = 0;
@@ -710,6 +714,10 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
   *state->rtt_us_1m_stddev = 0;
   *state->rtt_us_1m_p50 = 0;
   *state->rx_inq_before = 0;
+  *state->tx_outq_after = 0;
+  *state->tx_bytes = 0;
+  *state->age_ticks_last = 0;
+
   *state->rx_inq_after = 0;
   *state->rx_bytes_read = 0;
   *state->rx_tail_after_last = 0;

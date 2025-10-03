@@ -141,6 +141,11 @@ typedef struct {
   hal_s32_t *rx_bytes_read;
   hal_s32_t *rx_tail_after_last;
   hal_s32_t *age_us_last;
+  hal_s32_t *age_ticks_last;
+
+  // TX instrumentation
+  hal_s32_t *tx_outq_after;
+  hal_s32_t *tx_bytes;
 
   hal_bit_t *inputs[INPUT_PINS * 2];  // digital input pins, twice for inverted 'not' pins
                                       // passed through to LinuxCNC
@@ -157,6 +162,10 @@ static bool pin_err(int retval);
 #include "metrics.c"
 
 int comp_id;  // component ID
+// Last TX timestamp we stamped (host side), for correlation
+static uint16_t last_tx_ts16 = 0;
+static uint16_t prev_tx_ts16 = 0;
+
 const char *modname = MODNAME;
 const char *prefix = PREFIX;
 
@@ -693,7 +702,39 @@ static void uart_read() {
   int inq_after = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after);
   *state->rx_inq_after = inq_after;
 
-  // Compute packet age (us) from echoed 16-bit timestamp
+  // Debug: every 300th tick, print diffs of echoed timestamps for all full frames drained this tick
+  {
+    static int dbg_tick = 0;
+    dbg_tick++;
+    if (dbg_tick % 300 == 0) {
+      uint16_t ts_list[16];
+      int ts_count = 0;
+      for (int i = 0; i <= n - (int)PRU_TO_HOST_FRAME_BYTES && ts_count < 16; ++i) {
+        const pruState_t *ff = (const pruState_t *)(uart_rx_buf + i);
+        if (ff->header != PRU_DATA) continue;
+        const uint32_t c2 = crc32_ieee(((const uint8_t *)ff) + 4, sizeof(pruState_t) - 8);
+        if (c2 == ff->crc) {
+          ts_list[ts_count++] = ff->timestamp;
+          i += (int)PRU_TO_HOST_FRAME_BYTES - 1; // skip past this frame
+        }
+      }
+      if (ts_count >= 2) {
+        char line[256];
+        int pos = 0;
+        pos += snprintf(line, sizeof(line), "carvera: ts diffs (%d):", ts_count);
+        int max_print = ts_count - 1;
+        if (max_print > 8) max_print = 8; // bound line length
+        for (int k = 1; k <= max_print; ++k) {
+          uint16_t d = (uint16_t)(ts_list[k] - ts_list[k - 1]);
+          pos += snprintf(line + pos, sizeof(line) - (size_t)pos, " %u", (unsigned)d);
+          if (pos >= (int)sizeof(line)) break;
+        }
+        RTAPI_PRINT("%s\n", line);
+      }
+    }
+  }
+
+  // Compute packet age (us) and estimate tick lag
   {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
@@ -701,6 +742,14 @@ static void uart_read() {
     uint16_t ts16 = pru_state.timestamp;
     int32_t age_us = (int32_t)((uint16_t)(now16 - ts16));  // modulo-16-bit difference
     *state->age_us_last = age_us;
+    int32_t lag = 0;
+    if (servo_center_us > 0) {
+      int32_t per = (int32_t)servo_center_us;
+      // round to nearest tick
+      lag = (age_us + (per / 2)) / per;
+      if (lag < 0) lag = 0; if (lag > 10) lag = 10;
+    }
+    *state->age_ticks_last = lag;
     metrics_age_sample(state, age_us);
   }
 
@@ -767,21 +816,27 @@ static void uart_write() {
   {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
     uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
-    tx.timestamp = (uint16_t)(now_us & 0xFFFFu);
+    prev_tx_ts16 = last_tx_ts16;
+    last_tx_ts16 = (uint16_t)(now_us & 0xFFFFu);
+    tx.timestamp = last_tx_ts16;
   }
   tx.crc = crc32_ieee(((const uint8_t *)&tx) + 4, sizeof(linuxCncState_t) - 8);
 
   const uint8_t *p = (const uint8_t *)&tx;
   ssize_t remain = (ssize_t)sizeof(tx);
+  ssize_t wrote = 0;
   while (remain > 0) {
     ssize_t w = write(uart_fd, p, (size_t)remain);
-    if (w > 0) { p += w; remain -= w; continue; }
+    if (w > 0) { p += w; remain -= w; wrote += w; continue; }
     if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
       (*state->metric_write_errors)++;  // couldn't finish this tick
       break;
     }
     if (w < 0) { (*state->metric_write_errors)++; break; }
   }
+  *state->tx_bytes = (int32_t)wrote;
+  int outq = 0; (void)ioctl(uart_fd, TIOCOUTQ, &outq);
+  *state->tx_outq_after = outq;
 }
 
 // Non-RT worker: handles UART open/init and close outside the servo thread
