@@ -23,6 +23,9 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state);
 // forward decl for RTT 1s window setter used from servo side
 static inline void rtt_set_1s_window_internal(int n);
 
+// forward decl for AGE 1s window setter used from servo side
+static inline void age_set_1s_window_internal(int n);
+
 // Servo timing (us) histogram centered around requested period
 #define SERVO_RANGE_US 500                                                 // +/- 500 us around period
 #define SERVO_BIN_WIDTH_US 2                                               // 2 us bins
