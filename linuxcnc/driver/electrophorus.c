@@ -186,6 +186,8 @@ static pruState_t rx_pub_buf[2];
 static atomic_int rx_pub_idx = ATOMIC_VAR_INIT(-1); // -1 = none published yet
 static atomic_uint rx_seq = ATOMIC_VAR_INIT(0);
 static pthread_t rx_thread;
+static atomic_int rx_age_us_latest = ATOMIC_VAR_INIT(0);
+
 static volatile int rx_stop = 0;
 
 static uint8_t uart_rx_buf[4096];
@@ -696,15 +698,14 @@ static void *uart_rx_worker(void *arg) {
         int cur = atomic_load(&rx_pub_idx);
         int next = (cur == 0) ? 1 : 0;
         memcpy(&rx_pub_buf[next], f, sizeof(pruState_t));
-        // Compute arrival-time age and record metrics before publishing index
+        // Compute arrival-time age and store for servo to sample (avoid metrics from non-RT thread)
         {
           struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
           uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
           uint16_t now16 = (uint16_t)(now_us & 0xFFFFu);
           uint16_t ts16 = f->timestamp;
           int32_t age_us = (int32_t)((uint16_t)(now16 - ts16));
-          *state->age_us_last = age_us;
-          metrics_age_sample(state, age_us);
+          atomic_store(&rx_age_us_latest, age_us);
         }
         atomic_store_explicit(&rx_pub_idx, next, memory_order_release);
         atomic_fetch_add(&rx_seq, 1);
@@ -798,9 +799,11 @@ static void uart_read() {
   int inq_after = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after);
   *state->rx_inq_after = inq_after;
 
-  // Estimate tick lag using age sampled at arrival time by RX worker
+  // Use arrival-time age captured by RX worker; sample metrics in servo thread
   {
-    int32_t age_us = *state->age_us_last;
+    int32_t age_us = atomic_load(&rx_age_us_latest);
+    *state->age_us_last = age_us;
+    metrics_age_sample(state, age_us);
     int32_t lag = 0;
     if (servo_center_us > 0) {
       int32_t per = (int32_t)servo_center_us;
