@@ -32,6 +32,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <poll.h>
+#include <stdatomic.h>
+
 #include <linux/serial.h>
 
 #include "hal.h"
@@ -177,6 +180,14 @@ static ssize_t read_exact(int fd, uint8_t *p, size_t n);
 static ssize_t write_exact(int fd, const uint8_t *p, size_t n);
 static int uart_fd = -1;
 // Large RX scratch buffer to avoid big stack frames in uart_read
+static void *uart_rx_worker(void *arg);
+// RX publish: double-buffer latest complete frame + sequence counter
+static pruState_t rx_pub_buf[2];
+static atomic_int rx_pub_idx = ATOMIC_VAR_INIT(-1); // -1 = none published yet
+static atomic_uint rx_seq = ATOMIC_VAR_INIT(0);
+static pthread_t rx_thread;
+static volatile int rx_stop = 0;
+
 static uint8_t uart_rx_buf[4096];
 
 static void *uart_init_worker(void *arg);
@@ -352,18 +363,34 @@ int rtapi_app_main(void) {
     }
   }
 
+  // Start RX worker (explicit SCHED_OTHER; it will set its own affinity)
+  {
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
+    const int err = pthread_create(&rx_thread, &attr, uart_rx_worker, NULL);
+    pthread_attr_destroy(&attr);
+    if (err != 0) {
+      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pthread_create(rx) failed: %d\n", modname, err);
+    }
+  }
+
+
   rtapi_print_msg(RTAPI_MSG_INFO, "%s: installed driver\n", modname);
   hal_ready(comp_id);
   return 0;
 }
 
 void rtapi_app_exit(void) {
-  // Stop non-RT worker and clean up
+  // Stop workers and clean up
+  rx_stop = 1;
   pthread_mutex_lock(&init_mtx);
   init_stop = 1;
   pthread_cond_broadcast(&init_cv);
   pthread_mutex_unlock(&init_mtx);
   pthread_join(init_thread, NULL);
+  pthread_join(rx_thread, NULL);
 
   if (uart_fd >= 0) {
     close(uart_fd);
@@ -615,7 +642,95 @@ static uint32_t crc32_ieee(const uint8_t *data, const size_t len) {
   return crc ^ 0xFFFFFFFFu;
 }
 
+
+// RX worker implementation (runs in non-RT thread)
+static void *uart_rx_worker(void *arg) {
+  (void)arg;
+  // Pin to CPU 3 (free isolated core) to avoid contention
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  int worker_cpu = 3;
+  CPU_SET(worker_cpu, &set);
+  (void)pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+
+  uint8_t ring[1024];
+  int rn = 0;
+
+  for (;;) {
+    if (rx_stop) break;
+    // Wait until UART is ready
+    if (uart_fd < 0 || !init_ready) {
+      rn = 0;
+      atomic_store(&rx_pub_idx, -1);
+      struct timespec ts = {0, 1000000}; // 1 ms
+      nanosleep(&ts, NULL);
+      continue;
+    }
+
+    struct pollfd pfd = { .fd = uart_fd, .events = POLLIN };
+    int pr = poll(&pfd, 1, 100); // 100 ms timeout to allow clean shutdown
+    if (rx_stop) break;
+    if (pr <= 0) continue;
+    if (!(pfd.revents & POLLIN)) continue;
+
+    // Drain available bytes
+    for (;;) {
+      ssize_t r = read(uart_fd, ring + rn, (int)sizeof(ring) - rn);
+      if (r > 0) {
+        rn += (int)r;
+        if (rn > (int)sizeof(ring)) rn = (int)sizeof(ring);
+        continue;
+      }
+      if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) break;
+      break;
+    }
+
+    // Scan for the newest complete valid frame; publish latest-only
+    int have = 0;
+    int last_i = -1;
+    for (int i = rn - (int)PRU_TO_HOST_FRAME_BYTES; i >= 0; --i) {
+      const pruState_t *f = (const pruState_t *)(ring + i);
+      if (f->header != PRU_DATA) continue;
+      const uint32_t calc = crc32_ieee(((const uint8_t *)f) + 4, sizeof(pruState_t) - 8);
+      if (calc == f->crc) {
+        int cur = atomic_load(&rx_pub_idx);
+        int next = (cur == 0) ? 1 : 0;
+        memcpy(&rx_pub_buf[next], f, sizeof(pruState_t));
+        // Compute arrival-time age and record metrics before publishing index
+        {
+          struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+          uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
+          uint16_t now16 = (uint16_t)(now_us & 0xFFFFu);
+          uint16_t ts16 = f->timestamp;
+          int32_t age_us = (int32_t)((uint16_t)(now16 - ts16));
+          *state->age_us_last = age_us;
+          metrics_age_sample(state, age_us);
+        }
+        atomic_store_explicit(&rx_pub_idx, next, memory_order_release);
+        atomic_fetch_add(&rx_seq, 1);
+        have = 1; last_i = i;
+        break;
+      }
+    }
+
+    // Trim ring to bytes after the last published frame (or keep a small tail)
+    if (have) {
+      int tail = rn - (last_i + (int)PRU_TO_HOST_FRAME_BYTES);
+      if (tail > 0) memmove(ring, ring + (rn - tail), tail);
+      rn = (tail > 0) ? tail : 0;
+    } else {
+      if (rn > (int)PRU_TO_HOST_FRAME_BYTES - 1) {
+        int keep = (int)PRU_TO_HOST_FRAME_BYTES - 1;
+        memmove(ring, ring + (rn - keep), keep);
+        rn = keep;
+      }
+    }
+  }
+  return NULL;
+}
+
 static void uart_read() {
+
   if (!*state->comms_enable) {
     *state->comms_ready = 0;
     *state->comms_status = 0;
@@ -652,65 +767,47 @@ static void uart_read() {
 
   *state->comms_ready = 1;
 
-  // RX: drain available bytes, bounded linger to catch just-arrived data; pick last good frame
-  int n = 0;
-  struct timespec rd_start; clock_gettime(CLOCK_MONOTONIC_RAW, &rd_start);
-  // snapshot bytes queued in driver before draining
+  // RX via worker: use latest published complete frame if seq advanced
   int inq_before = 0; (void)ioctl(uart_fd, FIONREAD, &inq_before);
-  // single nonblocking read snapshot; do not linger to avoid extending the tick
-  const ssize_t r = read(uart_fd, uart_rx_buf, (int)sizeof(uart_rx_buf));
-  if (r > 0) n = (int)r;
   *state->rx_inq_before = inq_before;
-  *state->rx_bytes_read = n;
+  *state->rx_bytes_read = 0;
+  *state->rx_tail_after_last = 0;
 
-  int have_frame = 0;
-  int last_i = -1;
-  for (int i = n - (int)PRU_TO_HOST_FRAME_BYTES; i >= 0; --i) {
-    const pruState_t *f = (const pruState_t *)(uart_rx_buf + i);
-    if (f->header != PRU_DATA) continue;
-    const uint32_t calc = crc32_ieee(((const uint8_t *)f) + 4, sizeof(pruState_t) - 8);
-    if (calc == f->crc) {
-      memcpy(&pru_state, f, sizeof(pruState_t));
-      have_frame = 1;  // found last valid frame
-      last_i = i;
-      break;
-    }
-  }
-
-  if (!have_frame) {
-    *state->comms_status = 0;  // immediate fault on miss this tick
+  static unsigned last_seq_seen = 0;
+  unsigned seq = atomic_load(&rx_seq);
+  if (seq == 0 || seq == last_seq_seen) {
+    *state->comms_status = 0;
     (*state->metric_read_errors)++;
     int inq_after2 = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after2);
     *state->rx_inq_after = inq_after2;
-    *state->rx_tail_after_last = n;  // no frame found; report total bytes
     return;
   }
 
-  // tail bytes after the end of the newest valid frame we found
-  int tail = n - (last_i + (int)PRU_TO_HOST_FRAME_BYTES);
-  if (tail < 0) tail = 0;
-  *state->rx_tail_after_last = tail;
+  int idx = atomic_load_explicit(&rx_pub_idx, memory_order_acquire);
+  if (idx < 0) {
+    *state->comms_status = 0;
+    (*state->metric_read_errors)++;
+    int inq_after2 = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after2);
+    *state->rx_inq_after = inq_after2;
+    return;
+  }
+
+  memcpy(&pru_state, &rx_pub_buf[idx], sizeof(pruState_t));
+  last_seq_seen = seq;
+
   int inq_after = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after);
   *state->rx_inq_after = inq_after;
 
-
-  // Compute packet age (us) and estimate tick lag
+  // Estimate tick lag using age sampled at arrival time by RX worker
   {
-    struct timespec ts; clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ull + (uint64_t)((ts.tv_nsec + 500ull) / 1000ull);
-    uint16_t now16 = (uint16_t)(now_us & 0xFFFFu);
-    uint16_t ts16 = pru_state.timestamp;
-    int32_t age_us = (int32_t)((uint16_t)(now16 - ts16));  // modulo-16-bit difference
-    *state->age_us_last = age_us;
+    int32_t age_us = *state->age_us_last;
     int32_t lag = 0;
     if (servo_center_us > 0) {
       int32_t per = (int32_t)servo_center_us;
-      // round to nearest tick
       lag = (age_us + (per / 2)) / per;
       if (lag < 0) lag = 0; if (lag > 10) lag = 10;
     }
     *state->age_ticks_last = lag;
-    metrics_age_sample(state, age_us);
   }
 
   *state->comms_status = 1;
@@ -771,6 +868,7 @@ static void uart_write() {
 
   // TX: build and write one frame; attempt to queue the whole frame this tick
   linuxCncState_t tx = linuxcnc_state;
+
   tx.header = PRU_WRITE;
   // Fill 16-bit timestamp in microseconds (mod 65536) from CLOCK_MONOTONIC_RAW
   {

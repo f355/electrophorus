@@ -68,7 +68,6 @@ EOF
 # Pin PL011 (ttyAMA0) IRQ to a free isolated core to minimize latency under PREEMPT_RT
 # - Default to CPU 3; override by exporting PIN_IRQ_CPU before running this script
 # - Persist via a systemd oneshot service that runs at boot and waits for the IRQ to appear
-install -d /usr/local/sbin /etc/systemd/system
 cat >/usr/local/sbin/pin-irq-ttyama0.sh <<'EOSH'
 #!/usr/bin/env bash
 set -euo pipefail
