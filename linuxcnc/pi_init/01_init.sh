@@ -32,27 +32,10 @@ dtparam=uart0=on
 dtoverlay=disable-bt
 EOF
 
-sed -i 's/console=serial0,115200/processor.max_cstate=1 isolcpus=3 irqaffinity=0-2 skew_tick=1 kthread_cpus=0-2 rcu_nocb_poll rcu_nocbs=3 nohz=on nohz_full=3/' /boot/firmware/cmdline.txt
+sed -i 's/console=serial0,115200/processor.max_cstate=1 isolcpus=2,3 irqaffinity=0-1 skew_tick=1 kthread_cpus=0-1 rcu_nocb_poll rcu_nocbs=2,3 nohz=on nohz_full=2,3/' /boot/firmware/cmdline.txt
 
 # Disable Bluetooth HCI UART service (frees PL011)
 systemctl disable --now hciuart.service
-
-# Pin PL011 (ttyAMA0) IRQ to CPU3 at boot for lower jitter
-cat >/lib/systemd/system/pl011-affinity.service <<'EOF'
-[Unit]
-Description=Pin PL011 IRQ to CPU3
-After=multi-user.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash -c 'irq=$(awk "/ttyAMA0|pl011/ {print \$1}" /proc/interrupts | tr -d :) && echo 8 > /proc/irq/$irq/smp_affinity || true'
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl enable pl011-affinity.service
-
 
 # free up UART from being used as a login shell
 SERIAL=$(readlink /dev/serial0)
@@ -80,3 +63,43 @@ cat >/etc/udev/rules.d/99-ftdi-latency.rules <<'EOF'
 # FTDI FT232R: vendor 0x0403, product 0x6001
 ACTION=="add", SUBSYSTEM=="usb-serial", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTR{latency_timer}="1"
 EOF
+
+
+# Pin PL011 (ttyAMA0) IRQ to a free isolated core to minimize latency under PREEMPT_RT
+# - Default to CPU 3; override by exporting PIN_IRQ_CPU before running this script
+# - Persist via a systemd oneshot service that runs at boot and waits for the IRQ to appear
+install -d /usr/local/sbin /etc/systemd/system
+cat >/usr/local/sbin/pin-irq-ttyama0.sh <<'EOSH'
+#!/usr/bin/env bash
+set -euo pipefail
+IRQ=125
+CPU="${PIN_IRQ_CPU:-3}"
+AFF="/proc/irq/${IRQ}/smp_affinity_list"
+# Wait up to ~5s for the IRQ to be registered by the kernel
+for _ in $(seq 1 50); do
+    if [ -e "${AFF}" ]; then
+        echo "${CPU}" > "${AFF}" 2>/dev/null || true
+        exit 0
+    fi
+    sleep 0.1
+done
+exit 0
+EOSH
+chmod +x /usr/local/sbin/pin-irq-ttyama0.sh
+
+cat >/etc/systemd/system/pin-irq-ttyama0.service <<'EOSVC'
+[Unit]
+Description=Pin PL011 (ttyAMA0) IRQ to CPU for low-latency comms
+After=sysinit.target
+DefaultDependencies=yes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pin-irq-ttyama0.sh
+
+[Install]
+WantedBy=multi-user.target
+EOSVC
+
+systemctl daemon-reload
+systemctl enable pin-irq-ttyama0.service
