@@ -702,37 +702,6 @@ static void uart_read() {
   int inq_after = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after);
   *state->rx_inq_after = inq_after;
 
-  // Debug: every 300th tick, print diffs of echoed timestamps for all full frames drained this tick
-  {
-    static int dbg_tick = 0;
-    dbg_tick++;
-    if (dbg_tick % 300 == 0) {
-      uint16_t ts_list[16];
-      int ts_count = 0;
-      for (int i = 0; i <= n - (int)PRU_TO_HOST_FRAME_BYTES && ts_count < 16; ++i) {
-        const pruState_t *ff = (const pruState_t *)(uart_rx_buf + i);
-        if (ff->header != PRU_DATA) continue;
-        const uint32_t c2 = crc32_ieee(((const uint8_t *)ff) + 4, sizeof(pruState_t) - 8);
-        if (c2 == ff->crc) {
-          ts_list[ts_count++] = ff->timestamp;
-          i += (int)PRU_TO_HOST_FRAME_BYTES - 1; // skip past this frame
-        }
-      }
-      if (ts_count >= 2) {
-        char line[256];
-        int pos = 0;
-        pos += snprintf(line, sizeof(line), "carvera: ts diffs (%d):", ts_count);
-        int max_print = ts_count - 1;
-        if (max_print > 8) max_print = 8; // bound line length
-        for (int k = 1; k <= max_print; ++k) {
-          uint16_t d = (uint16_t)(ts_list[k] - ts_list[k - 1]);
-          pos += snprintf(line + pos, sizeof(line) - (size_t)pos, " %u", (unsigned)d);
-          if (pos >= (int)sizeof(line)) break;
-        }
-        rtapi_print("%s\n", line);
-      }
-    }
-  }
 
   // Compute packet age (us) and estimate tick lag
   {
