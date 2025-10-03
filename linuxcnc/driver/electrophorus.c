@@ -135,6 +135,13 @@ typedef struct {
   hal_s32_t *metric_read_errors;
   hal_s32_t *metric_write_errors;
 
+  // RX instrumentation (instantaneous, per tick)
+  hal_s32_t *rx_inq_before;
+  hal_s32_t *rx_inq_after;
+  hal_s32_t *rx_bytes_read;
+  hal_s32_t *rx_tail_after_last;
+  hal_s32_t *age_us_last;
+
   hal_bit_t *inputs[INPUT_PINS * 2];  // digital input pins, twice for inverted 'not' pins
                                       // passed through to LinuxCNC
 
@@ -639,6 +646,8 @@ static void uart_read() {
   // RX: drain available bytes, bounded linger to catch just-arrived data; pick last good frame
   int n = 0;
   struct timespec rd_start; clock_gettime(CLOCK_MONOTONIC_RAW, &rd_start);
+  // snapshot bytes queued in driver before draining
+  int inq_before = 0; (void)ioctl(uart_fd, FIONREAD, &inq_before);
   // initial nonblocking drain
   for (;;) {
     const ssize_t r = read(uart_fd, uart_rx_buf + n, (int)sizeof(uart_rx_buf) - n);
@@ -651,8 +660,11 @@ static void uart_read() {
     if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
     break;  // r == 0 or other error
   }
+  *state->rx_inq_before = inq_before;
+  *state->rx_bytes_read = n;
 
   int have_frame = 0;
+  int last_i = -1;
   for (int i = n - (int)PRU_TO_HOST_FRAME_BYTES; i >= 0; --i) {
     const pruState_t *f = (const pruState_t *)(uart_rx_buf + i);
     if (f->header != PRU_DATA) continue;
@@ -660,6 +672,7 @@ static void uart_read() {
     if (calc == f->crc) {
       memcpy(&pru_state, f, sizeof(pruState_t));
       have_frame = 1;  // found last valid frame
+      last_i = i;
       break;
     }
   }
@@ -667,8 +680,18 @@ static void uart_read() {
   if (!have_frame) {
     *state->comms_status = 0;  // immediate fault on miss this tick
     (*state->metric_read_errors)++;
+    int inq_after2 = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after2);
+    *state->rx_inq_after = inq_after2;
+    *state->rx_tail_after_last = n;  // no frame found; report total bytes
     return;
   }
+
+  // tail bytes after the end of the newest valid frame we found
+  int tail = n - (last_i + (int)PRU_TO_HOST_FRAME_BYTES);
+  if (tail < 0) tail = 0;
+  *state->rx_tail_after_last = tail;
+  int inq_after = 0; (void)ioctl(uart_fd, FIONREAD, &inq_after);
+  *state->rx_inq_after = inq_after;
 
   // Compute packet age (us) from echoed 16-bit timestamp
   {
@@ -677,6 +700,7 @@ static void uart_read() {
     uint16_t now16 = (uint16_t)(now_us & 0xFFFFu);
     uint16_t ts16 = pru_state.timestamp;
     int32_t age_us = (int32_t)((uint16_t)(now16 - ts16));  // modulo-16-bit difference
+    *state->age_us_last = age_us;
     metrics_age_sample(state, age_us);
   }
 

@@ -664,6 +664,13 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p50, comp_id, "%s.metrics.frame-age-us.1s.p50", prefix))) return -1;
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p95, comp_id, "%s.metrics.frame-age-us.1s.p95", prefix))) return -1;
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p99, comp_id, "%s.metrics.frame-age-us.1s.p99", prefix))) return -1;
+  // RX instrumentation (instantaneous)
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->rx_inq_before, comp_id, "%s.metrics.uart-rx.inq-before", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->rx_inq_after, comp_id, "%s.metrics.uart-rx.inq-after", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->rx_bytes_read, comp_id, "%s.metrics.uart-rx.bytes-read", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->rx_tail_after_last, comp_id, "%s.metrics.uart-rx.tail-after-last", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_last, comp_id, "%s.metrics.frame-age-us.last", prefix))) return -1;
+
 
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_bad_header, comp_id, "%s.metrics.bad-header", prefix)))
     return -1;
@@ -702,6 +709,12 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
   *state->rtt_us_1m_mean = 0;
   *state->rtt_us_1m_stddev = 0;
   *state->rtt_us_1m_p50 = 0;
+  *state->rx_inq_before = 0;
+  *state->rx_inq_after = 0;
+  *state->rx_bytes_read = 0;
+  *state->rx_tail_after_last = 0;
+  *state->age_us_last = 0;
+
   *state->rtt_us_1m_p95 = 0;
   *state->rtt_us_1m_p99 = 0;
   *state->rtt_us_1m_p99_9 = 0;
