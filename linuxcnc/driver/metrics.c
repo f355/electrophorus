@@ -133,6 +133,7 @@ static inline void servo_push_internal(const int32_t sample_us, const long l_per
 
   servo_set_1s_window_internal(new_1s_size);
   rtt_set_1s_window_internal(new_1s_size);
+  age_set_1s_window_internal(new_1s_size);
 
   if (new_1m_size != metric_1m_size) {
     // shrink logical window immediately by dropping oldest if needed
@@ -382,15 +383,15 @@ static inline int32_t rtt_percentile_1m(double p) {
 
 
 
-// Frame age (us) histogram — only 1m window
+// Frame age (us) histogram — 1s window
 #define AGE_MAX_US 6000
 #define AGE_BIN_WIDTH_US 10
 #define AGE_BIN_COUNT ((AGE_MAX_US / AGE_BIN_WIDTH_US) + 2) // +under/+over
 
-static uint32_t age_hist_1m[AGE_BIN_COUNT];
-static int age_1m_size = 60000; // aligned to metric_1m_size at push
-static int age_1m_count = 0, age_1m_head = 0;
-static int32_t age_1m_ring[METRIC_1M_MAX_SAMPLES];
+static int age_win_size = 1000; // 1s @1kHz; auto-adjusted from period
+static int age_count = 0, age_head = 0;
+static int32_t age_ring[METRIC_1M_MAX_SAMPLES];
+static uint32_t age_hist[AGE_BIN_COUNT];
 
 static inline int age_bin_index_age(const int32_t age_us) {
   // Treat > 3 servo periods as infinity
@@ -405,24 +406,58 @@ static inline int age_bin_index_age(const int32_t age_us) {
 }
 
 static inline void age_reset_all_internal(void) {
-  memset(age_hist_1m, 0, sizeof(age_hist_1m));
-  age_1m_count = 0; age_1m_head = 0; age_1m_size = metric_1m_size;
+  age_count = 0;
+  age_head = 0;
+  memset(age_hist, 0, sizeof(age_hist));
+}
+
+static inline void age_set_1s_window_internal(int n) {
+  if (n <= 0) n = 1;
+  if (n > METRIC_1M_MAX_SAMPLES) n = METRIC_1M_MAX_SAMPLES;
+  if (n != age_win_size) {
+    if (age_count > n) {
+      int drop = age_count - n;
+      for (int i = 0; i < drop; ++i) {
+        int oldest_idx = age_head - age_count;
+        while (oldest_idx < 0) oldest_idx += METRIC_1M_MAX_SAMPLES;
+        int32_t ov = age_ring[oldest_idx];
+        int ob = age_bin_index_age(ov);
+        if (age_hist[ob] > 0) age_hist[ob]--;
+        age_count--;
+      }
+    }
+    age_win_size = n;
+    if (age_head >= age_win_size) age_head %= age_win_size;
+  }
+}
+
+static inline void age_push_internal(const int32_t age_us) {
+  if (age_count == age_win_size) {
+    int32_t old = age_ring[age_head];
+    int ob = age_bin_index_age(old);
+    if (age_hist[ob] > 0) age_hist[ob]--;
+  } else {
+    age_count++;
+  }
+  age_ring[age_head] = age_us;
+  int nb = age_bin_index_age(age_us);
+  age_hist[nb]++;
+  age_head = (age_head + 1) % age_win_size;
 }
 
 static inline void metrics_update_age_outputs(state_t *state) {
-  // p50/p95/p99 from 1m histogram
-  if (age_1m_count <= 0) {
-    *state->age_us_1m_p50 = 0;
+  if (age_count <= 0) {
+    *state->age_us_1m_p50 = 0; // reuse fields for now; will export as 1s pins
     *state->age_us_1m_p95 = 0;
     *state->age_us_1m_p99 = 0;
     return;
   }
-  uint32_t target50 = (uint32_t)ceil(0.50 * age_1m_count);
-  uint32_t target95 = (uint32_t)ceil(0.95 * age_1m_count);
-  uint32_t target99 = (uint32_t)ceil(0.99 * age_1m_count);
+  uint32_t target50 = (uint32_t)ceil(0.50 * age_count);
+  uint32_t target95 = (uint32_t)ceil(0.95 * age_count);
+  uint32_t target99 = (uint32_t)ceil(0.99 * age_count);
   uint32_t acc = 0; int p50 = 0, p95 = 0, p99 = 0;
   for (int b = 0; b < AGE_BIN_COUNT; ++b) {
-    acc += age_hist_1m[b];
+    acc += age_hist[b];
     if (!p50 && acc >= target50) {
       if (b == 0) p50 = 0; else if (b == AGE_BIN_COUNT - 1) p50 = (int)(3 * (servo_center_us ? servo_center_us : 1000)); else p50 = (b - 1) * AGE_BIN_WIDTH_US;
     }
@@ -440,35 +475,7 @@ static inline void metrics_update_age_outputs(state_t *state) {
 }
 
 void metrics_age_sample(state_t *state, const int32_t age_us) {
-  // align 1m window size to metric_1m_size
-  if (age_1m_size != metric_1m_size) {
-    // Drop oldest if shrinking
-    if (age_1m_count > metric_1m_size) {
-      int drop = age_1m_count - metric_1m_size;
-      for (int i = 0; i < drop; ++i) {
-        int oldest_idx = age_1m_head - age_1m_count;
-        while (oldest_idx < 0) oldest_idx += METRIC_1M_MAX_SAMPLES;
-        int32_t ov = age_1m_ring[oldest_idx];
-        int ob = age_bin_index_age(ov);
-        if (age_hist_1m[ob] > 0) age_hist_1m[ob]--;
-        age_1m_count--;
-      }
-    }
-    age_1m_size = metric_1m_size;
-  }
-  // 1m sliding window update
-  if (age_1m_count == age_1m_size) {
-    int32_t old = age_1m_ring[age_1m_head];
-    int ob = age_bin_index_age(old);
-    if (age_hist_1m[ob] > 0) age_hist_1m[ob]--;
-  } else {
-    age_1m_count++;
-  }
-  age_1m_ring[age_1m_head] = age_us;
-  int nb = age_bin_index_age(age_us);
-  age_hist_1m[nb]++;
-  age_1m_head = (age_1m_head + 1) % METRIC_1M_MAX_SAMPLES;
-
+  age_push_internal(age_us);
   metrics_update_age_outputs(state);
 }
 
@@ -554,11 +561,6 @@ static inline void metrics_update_rtt_outputs(state_t *state) {
     *state->rtt_us_1m_p50 = 0;
     *state->rtt_us_1m_p95 = 0;
     *state->rtt_us_1m_p99 = 0;
-  // 1-minute frame age (us)
-  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p50, comp_id, "%s.metrics.frame-age-us.1m.p50", prefix))) return -1;
-  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p95, comp_id, "%s.metrics.frame-age-us.1m.p95", prefix))) return -1;
-  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p99, comp_id, "%s.metrics.frame-age-us.1m.p99", prefix))) return -1;
-
 
     *state->rtt_us_1m_p99_9 = 0;
   } else {
@@ -578,6 +580,7 @@ static inline void metrics_update_rtt_outputs(state_t *state) {
 void metrics_reset_all(state_t *state) {
   servo_reset_all_internal();
   rtt_reset_all_internal();
+  age_reset_all_internal();
   servo_center_us = 0;
   servo_prev_ts_ns = 0;
   // zero outputs
@@ -655,9 +658,9 @@ static int metrics_export_pins(int comp_id, const char *prefix, state_t *state) 
   // counters under metrics as well
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_frames_ok, comp_id, "%s.metrics.frames-ok", prefix))) return -1;
   // 1-minute frame age (us)
-  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p50, comp_id, "%s.metrics.frame-age-us.1m.p50", prefix))) return -1;
-  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p95, comp_id, "%s.metrics.frame-age-us.1m.p95", prefix))) return -1;
-  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p99, comp_id, "%s.metrics.frame-age-us.1m.p99", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p50, comp_id, "%s.metrics.frame-age-us.1s.p50", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p95, comp_id, "%s.metrics.frame-age-us.1s.p95", prefix))) return -1;
+  if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->age_us_1m_p99, comp_id, "%s.metrics.frame-age-us.1s.p99", prefix))) return -1;
 
   if (pin_err(hal_pin_s32_newf(HAL_OUT, &state->metric_bad_header, comp_id, "%s.metrics.bad-header", prefix)))
     return -1;
