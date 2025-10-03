@@ -657,18 +657,9 @@ static void uart_read() {
   struct timespec rd_start; clock_gettime(CLOCK_MONOTONIC_RAW, &rd_start);
   // snapshot bytes queued in driver before draining
   int inq_before = 0; (void)ioctl(uart_fd, FIONREAD, &inq_before);
-  // initial nonblocking drain
-  for (;;) {
-    const ssize_t r = read(uart_fd, uart_rx_buf + n, (int)sizeof(uart_rx_buf) - n);
-    if (r > 0) {
-      n += (int)r;
-      if (n >= (int)sizeof(uart_rx_buf)) break;
-      continue;
-    }
-    if (r < 0 && (errno == EINTR)) continue;
-    if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
-    break;  // r == 0 or other error
-  }
+  // single nonblocking read snapshot; do not linger to avoid extending the tick
+  const ssize_t r = read(uart_fd, uart_rx_buf, (int)sizeof(uart_rx_buf));
+  if (r > 0) n = (int)r;
   *state->rx_inq_before = inq_before;
   *state->rx_bytes_read = n;
 
