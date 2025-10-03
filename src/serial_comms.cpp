@@ -66,8 +66,7 @@ SerialComms::SerialComms() : tx_dma1(new MODDMA_Config()), tx_dma2(new MODDMA_Co
       ->transferSize(sizeof(pruState_t))
       ->transferType(MODDMA::m2p)
       ->srcConn(0)
-      ->dstConn(COMMS_DMA_TX)
-      ->attach_tc(this, &SerialComms::on_tx_dma_tc1);
+      ->dstConn(COMMS_DMA_TX);
 
   tx_dma2->channelNum(MODDMA::Channel_3)
       ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_buf2))
@@ -75,16 +74,16 @@ SerialComms::SerialComms() : tx_dma1(new MODDMA_Config()), tx_dma2(new MODDMA_Co
       ->transferSize(sizeof(pruState_t))
       ->transferType(MODDMA::m2p)
       ->srcConn(0)
-      ->dstConn(COMMS_DMA_TX)
-      ->attach_tc(this, &SerialComms::on_tx_dma_tc2);
+      ->dstConn(COMMS_DMA_TX);
 
   NVIC_SetPriority(DMA_IRQn, COMMS_DMA_PRIORITY);
 
-  // RX moved to main-loop polling; do not start RX DMA here
-  dma.Prepare(tx_dma1);
+  // RX moved to main-loop polling; do not start TX here in request-response mode
+
 }
 
 void SerialComms::on_tx_dma_tc1() { this->on_tx_dma(&tx_buf1, &tx_buf2, tx_dma2); }
+
 void SerialComms::on_tx_dma_tc2() { this->on_tx_dma(&tx_buf2, &tx_buf1, tx_dma1); }
 
 void SerialComms::on_tx_dma(volatile pruState_t* our_buf, volatile pruState_t* other_buf, MODDMA_Config* other_dma) {
@@ -154,6 +153,22 @@ void SerialComms::poll_rx_nonblocking() {
       memcpy(rx_cpu_fill, rx_buf + i, RX_FRAME_SIZE);
       // Stash the host-provided timestamp for echoing back
       last_host_timestamp = rx_cpu_fill->timestamp;
+      // Request-response TX: stamp and send one frame immediately, then flip buffers
+      {
+        // Flip buffer first so modules stop writing into the one we are about to send
+        core_util_critical_section_enter();
+        volatile pruState_t* to_send = pru_state;
+        pru_state = (to_send == &tx_buf1) ? &tx_buf2 : &tx_buf1;
+        core_util_critical_section_exit();
+        // Now stamp and send without holding the critical section
+        to_send->timestamp = last_host_timestamp;
+        const volatile uint8_t* s3 = reinterpret_cast<const volatile uint8_t*>(to_send) + 4;
+        to_send->crc = crc32_ieee(s3, sizeof(pruState_t) - 8);
+        MODDMA_Config* cfg = (to_send == &tx_buf1) ? tx_dma1 : tx_dma2;
+        dma.Prepare(cfg);
+        ++tx_frames;
+      }
+
       linuxcnc_state = rx_cpu_fill;
       ++rx_frames;
       data_ready_callback();
