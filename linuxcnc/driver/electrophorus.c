@@ -160,6 +160,9 @@ static int uart_open_config(void);
 static ssize_t read_exact(int fd, uint8_t *p, size_t n);
 static ssize_t write_exact(int fd, const uint8_t *p, size_t n);
 static int uart_fd = -1;
+// Large RX scratch buffer to avoid big stack frames in uart_read
+static uint8_t uart_rx_buf[4096];
+
 static void *uart_init_worker(void *arg);
 
 static char *device = "/dev/ttyUSB0";  // e.g. /dev/ttyUSB0 or /dev/ttyAMA0
@@ -634,15 +637,14 @@ static void uart_read() {
   *state->comms_ready = 1;
 
   // RX: drain available bytes, bounded linger to catch just-arrived data; pick last good frame
-  uint8_t buf[4096];
   int n = 0;
   struct timespec rd_start; clock_gettime(CLOCK_MONOTONIC_RAW, &rd_start);
   // initial nonblocking drain
   for (;;) {
-    const ssize_t r = read(uart_fd, buf + n, (int)sizeof(buf) - n);
+    const ssize_t r = read(uart_fd, uart_rx_buf + n, (int)sizeof(uart_rx_buf) - n);
     if (r > 0) {
       n += (int)r;
-      if (n >= (int)sizeof(buf)) break;
+      if (n >= (int)sizeof(uart_rx_buf)) break;
       continue;
     }
     if (r < 0 && (errno == EINTR)) continue;
@@ -652,7 +654,7 @@ static void uart_read() {
 
   int have_frame = 0;
   for (int i = n - (int)PRU_TO_HOST_FRAME_BYTES; i >= 0; --i) {
-    const pruState_t *f = (const pruState_t *)(buf + i);
+    const pruState_t *f = (const pruState_t *)(uart_rx_buf + i);
     if (f->header != PRU_DATA) continue;
     const uint32_t calc = crc32_ieee(((const uint8_t *)f) + 4, sizeof(pruState_t) - 8);
     if (calc == f->crc) {
