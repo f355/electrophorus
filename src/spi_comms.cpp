@@ -9,6 +9,20 @@
 
 enum State { ST_IDLE = 0, ST_RUNNING, ST_RESET };
 
+// ReSharper disable once CppDFAUnreachableFunctionCall
+static uint32_t crc32_ieee(const volatile uint8_t* data, const size_t len) {
+  uint32_t crc = 0xFFFFFFFFu;
+  for (size_t i = 0; i < len; ++i) {
+    const uint8_t byte = data[i];
+    crc ^= byte;
+    for (int k = 0; k < 8; ++k) {
+      const uint32_t mask = -(crc & 1u);
+      crc = (crc >> 1) ^ (0xEDB88320u & mask);
+    }
+  }
+  return ~crc;
+}
+
 SpiComms::SpiComms()
     : rx_dma1(new MODDMA_Config()),
       rx_dma2(new MODDMA_Config()),
@@ -113,17 +127,22 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
       reject_count = 0;
       break;
 
-    case PRU_WRITE:
-      data_ready = true;
+    case PRU_WRITE: {
       reject_count = 0;
-      // don't copy the rx_data if the e-stop button is pressed
+      data_ready = true;  // keep comms alive even if we skip copying under e-stop
       if (!this->e_stop_active) {
-        for (size_t i = 0; i < SPI_BUF_SIZE; i++) {
-          this->rx_data->buffer[i] = rx_buffer.buffer[i];
+        if (rx_buffer.crc32 == crc32_ieee(rx_buffer.buffer, LINUXCNC_CRC_LEN)) {
+          for (size_t i = 0; i < SPI_BUF_SIZE; i++) {
+            this->rx_data->buffer[i] = rx_buffer.buffer[i];
+          }
+          data_ready_callback();
+        } else {
+          reject_count++;
+          if (reject_count > 5) spi_error = true;
         }
-        data_ready_callback();
       }
       break;
+    }
 
     default:
       reject_count++;
@@ -131,6 +150,9 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
         spi_error = true;
       }
   }
+
+  // refresh TX CRC for next transfer
+  this->tx_data->crc32 = crc32_ieee(this->tx_data->buffer, PRU_CRC_LEN);
 
   // swap Rx buffers
   dma.Prepare(other_rx);
@@ -209,3 +231,7 @@ void SpiComms::loop() {
     wait_us(1000);
   }
 }
+
+// ----- SpiComms minimal accessors -----
+rxData_t volatile* SpiComms::get_rx() const { return this->rx_data; }
+txData_t volatile* SpiComms::get_tx() const { return this->tx_data; }

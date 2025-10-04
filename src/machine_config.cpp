@@ -26,30 +26,30 @@ vector<Module*> machine_modules(SpiComms* comms) {
 
   return {
       // XYZA
-      new Stepgen(0, new Pin(1, 28), (new Pin(1, 29))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
-      new Stepgen(1, new Pin(1, 26), new Pin(1, 27), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
-      new Stepgen(2, new Pin(1, 24), (new Pin(1, 25))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
-      new Stepgen(3, new Pin(1, 21), (new Pin(1, 23))->invert(), BASE_FREQUENCY, comms->rx_data, comms->tx_data),
+      new Stepgen(0, new Pin(1, 28), (new Pin(1, 29))->invert(), BASE_FREQUENCY, comms),
+      new Stepgen(1, new Pin(1, 26), new Pin(1, 27), BASE_FREQUENCY, comms),
+      new Stepgen(2, new Pin(1, 24), (new Pin(1, 25))->invert(), BASE_FREQUENCY, comms),
+      new Stepgen(3, new Pin(1, 21), (new Pin(1, 23))->invert(), BASE_FREQUENCY, comms),
 
       // e-stop
       new EStop((new Pin(0, 20))->invert(), comms),
 
-      new DigitalIns(INPUT_PINS, input_pins, comms->tx_data),  //
-      new DigitalOuts(OUTPUT_PINS, output_pins, comms->rx_data),
+      new DigitalIns(INPUT_PINS, input_pins, comms),  //
+      new DigitalOuts(OUTPUT_PINS, output_pins, comms),
 
-      new PulseCounter(0, new Pin(2, 7), comms->tx_data),  // spindle encoder feedback
+      new PulseCounter(0, new Pin(2, 7), comms),  // spindle encoder feedback
 
       // PWMs
       // on LPC1768, the period is shared among all PWMs,
       // so don't try setting it to different values - the last one wins.
       // many bothans died to bring us this information.
-      new PWM(0, new Pin(2, 5), 10000, comms->rx_data),  // spindle - keep this at output_var=0 for e-stop to kill it
-      new PWM(1, new Pin(2, 1), 10000, comms->rx_data),  // spindle fan
-      new PWM(2, new Pin(2, 3), 10000, comms->rx_data),  // power supply fan
-      new PWM(3, new Pin(2, 2), 10000, comms->rx_data),  // EXT port output
+      new PWM(0, new Pin(2, 5), 10000, comms),  // spindle - keep this at output_var=0 for e-stop to kill it
+      new PWM(1, new Pin(2, 1), 10000, comms),  // spindle fan
+      new PWM(2, new Pin(2, 3), 10000, comms),  // power supply fan
+      new PWM(3, new Pin(2, 2), 10000, comms),  // EXT port output
 
       // thermistor ADCs (converted to temperature on LinuxCNC side)
-      new ADC(1, new Pin(1, 31), comms->tx_data),  // spindle
-      new ADC(2, new Pin(0, 26), comms->tx_data),  // power supply
+      new ADC(1, new Pin(1, 31), comms),  // spindle
+      new ADC(2, new Pin(0, 26), comms),  // power supply
   };
 }

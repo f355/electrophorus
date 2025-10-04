@@ -434,6 +434,18 @@ void update_freq(void *arg, const long l_period_ns) {
   }
 }
 
+static uint32_t crc32_ieee(const uint8_t *data, const size_t len) {
+  uint32_t crc = 0xFFFFFFFFu;
+  for (size_t i = 0; i < len; ++i) {
+    crc ^= data[i];
+    for (int k = 0; k < 8; ++k) {
+      const uint32_t mask = -(crc & 1u);
+      crc = (crc >> 1) ^ (0xEDB88320u & mask);
+    }
+  }
+  return ~crc;
+}
+
 void spi_read() {
   // Data header
   tx_data.header = PRU_READ;
@@ -448,6 +460,14 @@ void spi_read() {
       switch (rx_data.header)  // only process valid SPI payloads. This rejects bad payloads
       {
         case PRU_DATA:
+          // verify CRC of PRU->LinuxCNC payload
+          if (rx_data.crc32 != crc32_ieee(rx_data.buffer, PRU_CRC_LEN)) {
+            *state->spi_status = 0;
+            rtapi_print("Bad SPI CRC:");
+            for (int i = 0; i < SPI_BUF_SIZE; i++) rtapi_print(" %02x", rx_data.buffer[i]);
+            rtapi_print("\n");
+            break;
+          }
           // we have received a GOOD payload from the PRU
           *state->spi_status = 1;
 
@@ -507,9 +527,7 @@ void spi_read() {
           // we have received a BAD payload from the PRU
           *state->spi_status = 0;
           rtapi_print("Bad SPI payload:");
-          for (int i = 0; i < SPI_BUF_SIZE; i++) {
-            rtapi_print(" %02x", rx_data.buffer[i]);
-          }
+          for (int i = 0; i < SPI_BUF_SIZE; i++) rtapi_print(" %02x", rx_data.buffer[i]);
           rtapi_print("\n");
       }
     }
@@ -547,6 +565,8 @@ void spi_write() {
   }
 
   if (*state->spi_status) {
+    // compute CRC for Linux->PRU payload (PRU_WRITE)
+    tx_data.crc32 = crc32_ieee(tx_data.buffer, LINUXCNC_CRC_LEN);
     spi_transfer();
   }
 }

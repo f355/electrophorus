@@ -1,11 +1,12 @@
 #include "stepgen.h"
+#include "LPC17xx.h"
+
 
 Stepgen::Stepgen(const int stepper_number, Pin* step_pin, Pin* dir_pin, const uint32_t ticker_frequency,
-                 volatile rxData_t* rx_data, volatile txData_t* tx_data)
-    : stepper_enable_mask(1 << stepper_number),
-      commanded_frequency(&rx_data->stepgen_freq_command[stepper_number]),
-      step_position(&tx_data->stepgen_feedback[stepper_number]),
-      stepper_enable(&rx_data->stepgen_enable_mask),
+                 SpiComms* comms)
+    : comms(comms),
+      stepper_index(stepper_number),
+      stepper_enable_mask(1 << stepper_number),
       ticker_frequency(ticker_frequency),
       step_pin(step_pin->as_output()),
       dir_pin(dir_pin->as_output()) {
@@ -26,7 +27,7 @@ void Stepgen::run_base() {
     return;
   }
 
-  if ((*this->stepper_enable & this->stepper_enable_mask) == 0) {
+  if ( (this->comms->get_rx()->stepgen_enable_mask & this->stepper_enable_mask) == 0) {
     return;  // stepper is disabled, nothing to do
   }
 
@@ -39,26 +40,29 @@ void Stepgen::run_base() {
 
   if (this->increment == 0) return;
 
-  int64_t position = *this->step_position;
+  int64_t position = this->comms->get_tx()->stepgen_feedback[this->stepper_index];
   const int64_t old_position = position;
   position += increment;
 
   if ((old_position ^ position) & FIXED_ONE) {
-    // the next whole step value is reached, make a step
     this->step_pin->set(true);
     this->is_stepping = true;
   }
-  *this->step_position = position;
+  const uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  this->comms->get_tx()->stepgen_feedback[this->stepper_index] = position;
+  __set_PRIMASK(primask);
 }
 
 void Stepgen::on_rx() {
-  if ((*this->stepper_enable & this->stepper_enable_mask) == 0 ||
-      (this->last_commanded_frequency == *this->commanded_frequency)) {
-    return;  // stepper is disabled or the command hasn't changed, nothing to do
+  const float cmd = this->comms->get_rx()->stepgen_freq_command[this->stepper_index];
+  if (( (this->comms->get_rx()->stepgen_enable_mask & this->stepper_enable_mask) == 0) ||
+      (this->last_commanded_frequency == cmd)) {
+    return;
   }
 
   // the commanded frequency has changed, recalculate the increment
-  this->last_commanded_frequency = *this->commanded_frequency;
+  this->last_commanded_frequency = cmd;
   this->increment =
       static_cast<int64_t>(this->last_commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
 

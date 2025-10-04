@@ -41,6 +41,10 @@ class SpiComms {
   volatile bool e_stop_active = false;
 
   [[noreturn]] void loop();
+
+  // Minimal accessors returning the whole volatile structs
+  [[nodiscard]] rxData_t volatile* get_rx() const;
+  [[nodiscard]] txData_t volatile* get_tx() const;
 };
 
 #endif
