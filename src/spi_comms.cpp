@@ -23,7 +23,7 @@ static uint32_t crc32_ieee(const volatile uint8_t* data, const size_t len) {
   return ~crc;
 }
 
-SpiComms::SpiComms() : cmd_dma(new MODDMA_Config()), rx_dma(new MODDMA_Config()), tx_dma(new MODDMA_Config()) {
+SpiComms::SpiComms() : cmd_dma(new MODDMA_Config()), rx_dma(new MODDMA_Config()), tx_dma(new MODDMA_Config()), tx_cmd_dma(new MODDMA_Config()) {
   // Initialize buffer pointers
   this->linuxcnc_state = &this->linuxcnc_state1;
   this->linuxcnc_back = &this->linuxcnc_state2;
@@ -39,7 +39,13 @@ SpiComms::SpiComms() : cmd_dma(new MODDMA_Config()), rx_dma(new MODDMA_Config())
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 
+  // Base config for payload TX (no src/size yet)
   tx_dma->channelNum(MODDMA::Channel_0)
+      ->transferType(MODDMA::m2p)
+      ->dstConn(MODDMA::SSP0_Tx);
+
+  // Dedicated TX channel for 4-byte command header
+  tx_cmd_dma->channelNum(MODDMA::Channel_1)
       ->transferType(MODDMA::m2p)
       ->dstConn(MODDMA::SSP0_Tx)
       ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_cmd))
@@ -65,7 +71,7 @@ SpiComms::SpiComms() : cmd_dma(new MODDMA_Config()), rx_dma(new MODDMA_Config())
 
   // Pass the configurations to the controller
   dma.Prepare(cmd_dma);
-  dma.Prepare(tx_dma);
+  dma.Prepare(tx_cmd_dma);
 }
 
 void SpiComms::cmd_callback() {
@@ -113,8 +119,8 @@ void SpiComms::cmd_callback() {
       // Unknown/corrupt command: LinuxCNC may still clock a payload.
       const size_t discard_size = (rx_mode == RxMode::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
       rx_mode = RxMode::Discard;  // mark this as discard-only
-      tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(&this->tx_cmd))->transferSize(sizeof(tx_cmd));
-      dma.Prepare(tx_dma);
+      tx_cmd_dma->srcMemAddr(reinterpret_cast<uint32_t>(&this->tx_cmd))->transferSize(sizeof(tx_cmd));
+      dma.Prepare(tx_cmd_dma);
       rx_dma->dstMemAddr(reinterpret_cast<uint32_t>(this->rx_discard))->transferSize(discard_size);
       dma.Prepare(rx_dma);
     }
@@ -125,8 +131,8 @@ void SpiComms::rx_callback() {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
-  tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(&tx_cmd))->transferSize(sizeof(tx_cmd));
-  dma.Prepare(tx_dma);
+  tx_cmd_dma->srcMemAddr(reinterpret_cast<uint32_t>(&tx_cmd))->transferSize(sizeof(tx_cmd));
+  dma.Prepare(tx_cmd_dma);
 
   switch (rx_mode) {
     case RxMode::Read: {
@@ -152,10 +158,8 @@ void SpiComms::rx_callback() {
           if (reject_count > 5) spi_error = true;
         }
       }
-    }
-    case RxMode::Discard:
-      // discard-only payload completed; nothing to publish
       break;
+    }
     default:;
   }
 

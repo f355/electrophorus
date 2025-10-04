@@ -11,6 +11,8 @@ class SpiComms {
   MODDMA_Config* cmd_dma;
   MODDMA_Config* rx_dma;
   MODDMA_Config* tx_dma;
+  MODDMA_Config* tx_cmd_dma;
+
 
   linuxCncState_t volatile linuxcnc_state1{};
   linuxCncState_t volatile linuxcnc_state2{};
