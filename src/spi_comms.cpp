@@ -96,7 +96,13 @@ void SpiComms::cmd_callback() {
       reject_count = 0;
       data_ready = true;  // keep comms alive even if we skip updating under e-stop
 
-      // Arm RX to write into the back buffer
+      // Arm TX to send the current PRU snapshot while we receive LinuxCNC payload
+      this->pru_back->crc32 =
+          crc32_ieee(reinterpret_cast<const volatile uint8_t*>(this->pru_back), offsetof(pruState_t, crc32));
+      tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(this->pru_back))->transferSize(sizeof(pruState_t));
+      dma.Prepare(tx_dma);
+
+      // Arm RX to write incoming LinuxCNC payload into the back buffer
       rx_dma->dstMemAddr(reinterpret_cast<uint32_t>(this->linuxcnc_back))->transferSize(sizeof(linuxCncState_t));
       dma.Prepare(rx_dma);
 
