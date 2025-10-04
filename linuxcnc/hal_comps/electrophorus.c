@@ -46,8 +46,8 @@ MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");
 MODULE_LICENSE("GPL v3");
 
 
-#define SPI_READ_GAP_NS 10000L  // ~10 us
-#define SPI_WRITE_GAP_NS 3000L  // ~3 us
+#define SPI_READ_GAP_NS 20000L  // ~20 us
+#define SPI_WRITE_GAP_NS 6000L  // ~6 us
 
 static int spi_freq = 5000000;
 RTAPI_MP_INT(spi_freq, "SPI clock frequency in Hz (default 5,000,000)");
