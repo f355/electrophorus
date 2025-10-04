@@ -23,9 +23,13 @@ class SpiComms {
   volatile uint32_t tx_cmd = PRU_DATA;
 
   // Discard buffer for header-rejected payloads; sized to the larger of the two payload structs
-  static constexpr size_t RX_DISCARD_SIZE = sizeof(linuxCncState_t) > sizeof(pruState_t) ? sizeof(linuxCncState_t)
-                                                                                         : sizeof(pruState_t);
+  static constexpr size_t RX_DISCARD_SIZE = (
+      sizeof(linuxCncState_t) > sizeof(pruState_t) ? sizeof(linuxCncState_t) : sizeof(pruState_t));
   volatile uint8_t rx_discard[RX_DISCARD_SIZE]{};
+
+  // Dedicated zero TX buffer for WRITE payloads (size = LinuxCNC payload)
+  static constexpr size_t WRITE_TX_SIZE = sizeof(linuxCncState_t);
+  volatile uint8_t tx_zero[WRITE_TX_SIZE]{};
 
   // Mode of the last completed or currently armed payload
   enum class RxMode : uint8_t { None = 0, Read = 1, Write = 2, Discard = 3 };

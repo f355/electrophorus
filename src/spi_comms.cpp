@@ -102,8 +102,8 @@ void SpiComms::cmd_callback() {
       reject_count = 0;
       data_ready = true;  // keep comms alive even if we skip updating under e-stop
 
-      // Arm TX to send discard bytes sized to the WRITE payload
-      tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(this->rx_discard))->transferSize(sizeof(linuxCncState_t));
+      // Arm TX to send constant zeros for the WRITE payload
+      tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(this->tx_zero))->transferSize(sizeof(linuxCncState_t));
       dma.Prepare(tx_dma);
 
       // Arm RX to write incoming LinuxCNC payload into the back buffer
