@@ -45,8 +45,14 @@ MODULE_AUTHOR("Scott Alford AKA scotta, modified by Konstantin Tcepliaev <f355@f
 MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");
 MODULE_LICENSE("GPL v3");
 
+
+#define SPI_READ_GAP_NS 10000L  // ~10 us
+#define SPI_WRITE_GAP_NS 3000L  // ~3 us
+
 static int spi_freq = 5000000;
 RTAPI_MP_INT(spi_freq, "SPI clock frequency in Hz (default 5,000,000)");
+
+static const uint8_t spi_read_dummy_tx[sizeof(pruState_t)] = {0};
 
 #define f_period_s ((double)(l_period_ns * 1e-9))
 
@@ -95,11 +101,8 @@ typedef struct {
 
 static state_t *state;
 
-typedef pruData_t rxData_t;
-typedef linuxCncData_t txData_t;
-
-static txData_t tx_data;
-static rxData_t rx_data;
+static linuxCncState_t tx_state;
+static pruState_t rx_state;
 
 /* other globals */
 static int comp_id;  // component ID
@@ -114,7 +117,7 @@ static int rt_peripheral_init();
 static void update_freq(void *arg, long l_period_ns);
 static void spi_write();
 static void spi_read();
-static void spi_transfer();
+static inline void spi_xfer(uint8_t *rx, const uint8_t *tx, size_t len);
 
 int rtapi_app_main(void) {
   // connect to the HAL, initialise the driver
@@ -430,7 +433,7 @@ void update_freq(void *arg, const long l_period_ns) {
 
     *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
 
-    tx_data.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
+    tx_state.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
   }
 }
 
@@ -447,24 +450,26 @@ static uint32_t crc32_ieee(const uint8_t *data, const size_t len) {
 }
 
 void spi_read() {
-  // Data header
-  tx_data.header = PRU_READ;
+  uint32_t rx_cmd = 0;
+  const uint32_t cmd = PRU_READ;
 
   if (*(state->spi_enable)) {
     if ((*state->spi_reset && !state->spi_reset_old) || *state->spi_status) {
       // reset rising edge detected, try SPI transfer and reset OR PRU running
 
-      // Transfer to and from the PRU
-      spi_transfer();
+      // Split READ into header then payload
+      spi_xfer((uint8_t *)&rx_cmd, (const uint8_t *)&cmd, sizeof(cmd));
+      rtapi_delay(SPI_READ_GAP_NS);
+      spi_xfer((uint8_t *)&rx_state, spi_read_dummy_tx, sizeof(pruState_t));
 
-      switch (rx_data.header)  // only process valid SPI payloads. This rejects bad payloads
+      switch (rx_cmd)  // only process valid SPI payloads. This rejects bad payloads
       {
         case PRU_DATA:
           // verify CRC of PRU->LinuxCNC payload
-          if (rx_data.crc32 != crc32_ieee(rx_data.buffer, PRU_CRC_LEN)) {
+          if (rx_state.crc32 != crc32_ieee((const uint8_t *)&rx_state, (offsetof(pruState_t, crc32)))) {
             *state->spi_status = 0;
             rtapi_print("Bad SPI CRC:");
-            for (int i = 0; i < SPI_BUF_SIZE; i++) rtapi_print(" %02x", rx_data.buffer[i]);
+            for (int i = 0; i < (int)sizeof(pruState_t); i++) rtapi_print(" %02x", ((uint8_t *)&rx_state)[i]);
             rtapi_print("\n");
             break;
           }
@@ -474,7 +479,7 @@ void spi_read() {
           for (int i = 0; i < STEPGENS; i++) {
             stepper_state_t *s = &state->stepgens[i];
 
-            const int64_t acc = rx_data.stepgen_feedback[i];
+            const int64_t acc = rx_state.stepgen_feedback[i];
 
             // those tricky users are always trying to get us to divide by zero
             if (fabs(s->hal.param.position_scale) < 1e-6) {
@@ -508,12 +513,12 @@ void spi_read() {
           }
 
           for (int i = 0; i < INPUT_VARS; i++) {
-            *state->input_vars[i] = rx_data.input_vars[i];
+            *state->input_vars[i] = rx_state.input_vars[i];
           }
 
           // Inputs
           for (int i = 0; i < INPUT_PINS; i++) {
-            if ((rx_data.inputs & (1 << i)) != 0) {
+            if ((rx_state.inputs & (1 << i)) != 0) {
               *state->inputs[i] = 1;               // input is high
               *state->inputs[i + INPUT_PINS] = 0;  // inverted 'not' is offset by number of digital inputs.
             } else {
@@ -527,7 +532,7 @@ void spi_read() {
           // we have received a BAD payload from the PRU
           *state->spi_status = 0;
           rtapi_print("Bad SPI payload:");
-          for (int i = 0; i < SPI_BUF_SIZE; i++) rtapi_print(" %02x", rx_data.buffer[i]);
+          for (int i = 0; i < (int)sizeof(pruState_t); i++) rtapi_print(" %02x", ((uint8_t *)&rx_state)[i]);
           rtapi_print("\n");
       }
     }
@@ -541,43 +546,48 @@ void spi_read() {
 void spi_write() {
   int i;
 
-  tx_data.header = PRU_WRITE;
+  const uint32_t cmd = PRU_WRITE;
 
   for (i = 0; i < STEPGENS; i++) {
     const stepper_state_t *s = &state->stepgens[i];
     if (*s->hal.pin.enable == 1) {
-      tx_data.stepgen_enable_mask |= 1 << i;
+      tx_state.stepgen_enable_mask |= 1 << i;
     } else {
-      tx_data.stepgen_enable_mask &= ~(1 << i);
+      tx_state.stepgen_enable_mask &= ~(1 << i);
     }
   }
 
   for (i = 0; i < OUTPUT_VARS; i++) {
-    tx_data.output_vars[i] = (int32_t)*state->output_vars[i];
+    tx_state.output_vars[i] = (int32_t)*state->output_vars[i];
   }
 
   for (i = 0; i < OUTPUT_PINS; i++) {
     if (*state->outputs[i] == 1) {
-      tx_data.outputs |= 1 << i;
+      tx_state.outputs |= 1 << i;
     } else {
-      tx_data.outputs &= ~(1 << i);
+      tx_state.outputs &= ~(1 << i);
     }
   }
 
   if (*state->spi_status) {
     // compute CRC for Linux->PRU payload (PRU_WRITE)
-    tx_data.crc32 = crc32_ieee(tx_data.buffer, LINUXCNC_CRC_LEN);
-    spi_transfer();
+    tx_state.crc32 = crc32_ieee((const uint8_t *)&tx_state, (offsetof(linuxCncState_t, crc32)));
+    // Split WRITE into header then payload
+    {
+      uint32_t rx_dummy = 0;
+      spi_xfer((uint8_t *)&rx_dummy, (const uint8_t *)&cmd, sizeof(cmd));
+    }
+    rtapi_delay(SPI_WRITE_GAP_NS);
+    spi_xfer((uint8_t *)&rx_state, (uint8_t *)&tx_state, (sizeof(linuxCncState_t)));
   }
 }
-
-void spi_transfer() {
+static inline void spi_xfer(uint8_t *rx, const uint8_t *tx, const size_t len) {
   switch (spi_driver) {
     case SPI_RPI4:
-      rpi4_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
+      rpi4_spi_xfer(rx, tx, len);
       break;
     case SPI_RPI5:
-      rpi5_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
+      rpi5_spi_xfer(rx, tx, len);
       break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");

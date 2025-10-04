@@ -6,7 +6,7 @@ PulseCounter::PulseCounter(const int var_number, const Pin* pin, SpiComms* comms
   (new InterruptIn(pin->to_pin_name()))->rise(callback(this, &PulseCounter::interrupt_handler));
 }
 
-void PulseCounter::run_servo() { this->comms->get_tx()->input_vars[this->var_number] = this->counter; }
+void PulseCounter::run_servo() { this->comms->get_pru_state()->input_vars[this->var_number] = this->counter; }
 
 void PulseCounter::interrupt_handler() { this->counter++; }
 

@@ -13,7 +13,7 @@ ADC::ADC(const int var_number, Pin* pin, SpiComms* comms)
 void ADC::run_servo() {
   if (--this->counter == 0) {
     this->counter = run_every;
-    this->comms->get_tx()->input_vars[this->var_number] = this->adc->read_u16();
+    this->comms->get_pru_state()->input_vars[this->var_number] = this->adc->read_u16();
   }
 }
 

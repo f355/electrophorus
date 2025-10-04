@@ -1,6 +1,6 @@
 #include "stepgen.h"
-#include "LPC17xx.h"
 
+#include "LPC17xx.h"
 
 Stepgen::Stepgen(const int stepper_number, Pin* step_pin, Pin* dir_pin, const uint32_t ticker_frequency,
                  SpiComms* comms)
@@ -27,7 +27,7 @@ void Stepgen::run_base() {
     return;
   }
 
-  if ( (this->comms->get_rx()->stepgen_enable_mask & this->stepper_enable_mask) == 0) {
+  if ((this->comms->get_linuxcnc_state()->stepgen_enable_mask & this->stepper_enable_mask) == 0) {
     return;  // stepper is disabled, nothing to do
   }
 
@@ -40,7 +40,7 @@ void Stepgen::run_base() {
 
   if (this->increment == 0) return;
 
-  int64_t position = this->comms->get_tx()->stepgen_feedback[this->stepper_index];
+  int64_t position = this->comms->get_pru_state()->stepgen_feedback[this->stepper_index];
   const int64_t old_position = position;
   position += increment;
 
@@ -48,15 +48,15 @@ void Stepgen::run_base() {
     this->step_pin->set(true);
     this->is_stepping = true;
   }
-  const uint32_t primask = __get_PRIMASK();
+  // 64-bit writes are not atomic, so we need to disable interrupts to prevent tearing
   __disable_irq();
-  this->comms->get_tx()->stepgen_feedback[this->stepper_index] = position;
-  __set_PRIMASK(primask);
+  this->comms->get_pru_state()->stepgen_feedback[this->stepper_index] = position;
+  __enable_irq();
 }
 
 void Stepgen::on_rx() {
-  const float cmd = this->comms->get_rx()->stepgen_freq_command[this->stepper_index];
-  if (( (this->comms->get_rx()->stepgen_enable_mask & this->stepper_enable_mask) == 0) ||
+  const float cmd = this->comms->get_linuxcnc_state()->stepgen_freq_command[this->stepper_index];
+  if (((this->comms->get_linuxcnc_state()->stepgen_enable_mask & this->stepper_enable_mask) == 0) ||
       (this->last_commanded_frequency == cmd)) {
     return;
   }

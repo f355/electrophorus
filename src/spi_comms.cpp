@@ -23,142 +23,149 @@ static uint32_t crc32_ieee(const volatile uint8_t* data, const size_t len) {
   return ~crc;
 }
 
-SpiComms::SpiComms()
-    : rx_dma1(new MODDMA_Config()),
-      rx_dma2(new MODDMA_Config()),
-      tx_dma1(new MODDMA_Config()),
-      tx_dma2(new MODDMA_Config()),
-      rx_data(new rxData_t()),
-      tx_data(new txData_t()) {
-  // sanity-check the struct sizes
-  if constexpr (sizeof(rxData_t) != sizeof(txData_t)) {
-    // ReSharper disable once CppDFAUnreachableCode
-    error("rx and tx buffer size mismatch!");
-  }
+SpiComms::SpiComms() : cmd_dma(new MODDMA_Config()), rx_dma(new MODDMA_Config()), tx_dma(new MODDMA_Config()) {
+  // Initialize buffer pointers
+  this->linuxcnc_state = &this->linuxcnc_state1;
+  this->linuxcnc_back = &this->linuxcnc_state2;
+  this->pru_state = &this->pru_state1;
+  this->pru_back = &this->pru_state2;
+
+  // Command word sent in the header phase
+  this->tx_cmd = PRU_DATA;
+  // Initial CRC so the very first PRU_DATA payload is valid
+  this->pru_state1.crc32 =
+      crc32_ieee(reinterpret_cast<const volatile uint8_t*>(&this->pru_state1), offsetof(pruState_t, crc32));
+
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 
-  tx_dma1->channelNum(MODDMA::Channel_0)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
-      ->dstMemAddr(0)
-      ->transferSize(SPI_BUF_SIZE)
+  tx_dma->channelNum(MODDMA::Channel_0)
       ->transferType(MODDMA::m2p)
-      ->srcConn(0)
       ->dstConn(MODDMA::SSP0_Tx)
-      ->attach_tc(this, &SpiComms::tx1_callback)
-      ->attach_err(this, &SpiComms::err_callback);
+      ->srcMemAddr(reinterpret_cast<uint32_t>(&tx_cmd))
+      ->transferSize(sizeof(tx_cmd));
 
-  tx_dma2->channelNum(MODDMA::Channel_1)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
-      ->dstMemAddr(0)
-      ->transferSize(SPI_BUF_SIZE)
-      ->transferType(MODDMA::m2p)
-      ->srcConn(0)
-      ->dstConn(MODDMA::SSP0_Tx)
-      ->attach_tc(this, &SpiComms::tx2_callback)
-      ->attach_err(this, &SpiComms::err_callback);
-
-  rx_dma1->channelNum(MODDMA::Channel_2)
-      ->srcMemAddr(0)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer1))
-      ->transferSize(SPI_BUF_SIZE)
+  cmd_dma->channelNum(MODDMA::Channel_2)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
-      ->dstConn(0)
-      ->attach_tc(this, &SpiComms::rx1_callback)
-      ->attach_err(this, &SpiComms::err_callback);
+      ->attach_tc(this, &SpiComms::cmd_callback)
+      ->dstMemAddr(reinterpret_cast<uint32_t>(&rx_cmd))
+      ->transferSize(sizeof(rx_cmd));
 
-  rx_dma2->channelNum(MODDMA::Channel_3)
-      ->srcMemAddr(0)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer2))
-      ->transferSize(SPI_BUF_SIZE)
+  rx_dma->channelNum(MODDMA::Channel_3)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
-      ->dstConn(0)
-      ->attach_tc(this, &SpiComms::rx2_callback)
-      ->attach_err(this, &SpiComms::err_callback);
+      ->attach_tc(this, &SpiComms::rx_callback);
 
   NVIC_SetPriority(DMA_IRQn, DMA_PRIORITY);
-
-  this->tx_data->header = PRU_DATA;
-
-  // Pass the configurations to the controller
-  dma.Prepare(rx_dma1);
-  dma.Prepare(tx_dma1);
 
   // Enable SSP0 for DMA
   LPC_SSP0->DMACR = 0;
   LPC_SSP0->DMACR = 1 << 1 | 1 << 0;  // TX,RX DMA Enable
+
+  // Pass the configurations to the controller
+  dma.Prepare(cmd_dma);
+  dma.Prepare(tx_dma);
 }
 
-void SpiComms::tx1_callback() {
-  dma.Disable(dma.irqProcessingChannel());
-  dma.clearTcIrq();
-  dma.Prepare(tx_dma2);
-}
-
-void SpiComms::tx2_callback() {
-  dma.Disable(dma.irqProcessingChannel());
-  dma.clearTcIrq();
-  dma.Prepare(tx_dma1);
-}
-
-void SpiComms::rx1_callback() { this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2); }
-
-void SpiComms::rx2_callback() { this->rx_callback_impl(this->temp_rx_buffer2, this->rx_dma1); }
-
-void SpiComms::data_ready_callback() {
-  // trigger PendSV IRQ to signal that the data is ready
-  SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
-}
-
-// ReSharper disable once CppDFAUnreachableFunctionCall
-void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx) {
+void SpiComms::cmd_callback() {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
   data_ready = false;
   spi_error = false;
 
-  // Check and move the received SPI data payload
-  switch (rx_buffer.header) {
-    case PRU_READ:
-      data_ready = true;
+  switch (this->rx_cmd) {
+    case PRU_READ: {
       reject_count = 0;
-      break;
+      data_ready = true;
+      // Transmit the back buffer (stable snapshot)
+      this->pru_back->crc32 =
+          crc32_ieee(reinterpret_cast<const volatile uint8_t*>(this->pru_back), offsetof(pruState_t, crc32));
+      tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(this->pru_back))->transferSize(sizeof(pruState_t));
+      dma.Prepare(tx_dma);
 
+      // Discard incoming PRU payload bytes for READ
+      rx_dma->dstMemAddr(reinterpret_cast<uint32_t>(this->rx_discard))->transferSize(sizeof(pruState_t));
+      dma.Prepare(rx_dma);
+
+      rx_mode = RxMode::Read;  // READ payload in progress
+      break;
+    }
     case PRU_WRITE: {
       reject_count = 0;
-      data_ready = true;  // keep comms alive even if we skip copying under e-stop
+      data_ready = true;  // keep comms alive even if we skip updating under e-stop
+
+      // Arm RX to write into the back buffer
+      rx_dma->dstMemAddr(reinterpret_cast<uint32_t>(this->linuxcnc_back))->transferSize(sizeof(linuxCncState_t));
+      dma.Prepare(rx_dma);
+
+      rx_mode = RxMode::Write;  // WRITE payload in progress
+      break;
+    }
+    default: {
+      reject_count++;
+      if (reject_count > 5) spi_error = true;
+      // Unknown/corrupt command: LinuxCNC may still clock a payload.
+      const size_t discard_size = (rx_mode == RxMode::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
+      rx_mode = RxMode::Discard;  // mark this as discard-only
+      tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(&this->tx_cmd))->transferSize(sizeof(tx_cmd));
+      dma.Prepare(tx_dma);
+      rx_dma->dstMemAddr(reinterpret_cast<uint32_t>(this->rx_discard))->transferSize(discard_size);
+      dma.Prepare(rx_dma);
+    }
+  }
+}
+
+void SpiComms::rx_callback() {
+  dma.Disable(dma.irqProcessingChannel());
+  dma.clearTcIrq();
+
+  tx_dma->srcMemAddr(reinterpret_cast<uint32_t>(&tx_cmd))->transferSize(sizeof(tx_cmd));
+  dma.Prepare(tx_dma);
+
+  switch (rx_mode) {
+    case RxMode::Read: {
+      // READ payload completed; swap writer and back buffers
+      volatile pruState_t* tmp = this->pru_state;
+      this->pru_state = this->pru_back;
+      this->pru_back = tmp;
+      break;
+    }
+    case RxMode::Write: {
+      // WRITE payload completed; validate and publish
       if (!this->e_stop_active) {
-        if (rx_buffer.crc32 == crc32_ieee(rx_buffer.buffer, LINUXCNC_CRC_LEN)) {
-          for (size_t i = 0; i < SPI_BUF_SIZE; i++) {
-            this->rx_data->buffer[i] = rx_buffer.buffer[i];
-          }
+        volatile linuxCncState_t* buf = this->linuxcnc_back;
+        if (buf->crc32 ==
+            crc32_ieee(reinterpret_cast<const volatile uint8_t*>(buf), offsetof(linuxCncState_t, crc32))) {
+          // swap: published <-> back
+          volatile linuxCncState_t* tmp = this->linuxcnc_state;
+          this->linuxcnc_state = buf;
+          this->linuxcnc_back = tmp;
           data_ready_callback();
         } else {
           reject_count++;
           if (reject_count > 5) spi_error = true;
         }
       }
-      break;
     }
-
-    default:
-      reject_count++;
-      if (reject_count > 5) {
-        spi_error = true;
-      }
+    case RxMode::Discard:
+      // discard-only payload completed; nothing to publish
+      break;
+    default:;
   }
 
-  // refresh TX CRC for next transfer
-  this->tx_data->crc32 = crc32_ieee(this->tx_data->buffer, PRU_CRC_LEN);
+  // Re-arm for next command header
+  cmd_dma->dstMemAddr(reinterpret_cast<uint32_t>(&rx_cmd))->transferSize(sizeof(rx_cmd));
+  dma.Prepare(cmd_dma);
 
-  // swap Rx buffers
-  dma.Prepare(other_rx);
+  // Reset transient markers
 }
 
-void SpiComms::err_callback() { error("DMA error on channel %d!\n", dma.irqProcessingChannel()); }
+void SpiComms::data_ready_callback() {
+  // trigger PendSV IRQ to signal that the data is ready
+  SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
+}
 
 void SpiComms::loop() {
   uint8_t spi_delay = 0;
@@ -220,9 +227,10 @@ void SpiComms::loop() {
         }
         prev_state = current_state;
 
-        // set the whole rxData buffer to 0
+        // clear the whole LinuxCNC state buffer
         // can't memset volatile memory, so use a loop instead
-        for (volatile uint8_t& b : this->rx_data->buffer) b = 0;
+        for (size_t i = 0; i < sizeof(linuxCncState_t); ++i)
+          reinterpret_cast<volatile uint8_t*>(this->linuxcnc_state)[i] = 0;
         data_ready_callback();
 
         current_state = ST_IDLE;
@@ -233,5 +241,5 @@ void SpiComms::loop() {
 }
 
 // ----- SpiComms minimal accessors -----
-rxData_t volatile* SpiComms::get_rx() const { return this->rx_data; }
-txData_t volatile* SpiComms::get_tx() const { return this->tx_data; }
+linuxCncState_t volatile* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
+pruState_t volatile* SpiComms::get_pru_state() const { return this->pru_state; }

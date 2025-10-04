@@ -5,46 +5,55 @@
 #include "mbed.h"
 #include "spi_data.h"
 
-typedef linuxCncData_t rxData_t;
-typedef pruData_t txData_t;
-
 class SpiComms {
   MODDMA dma;
 
-  MODDMA_Config* rx_dma1;
-  MODDMA_Config* rx_dma2;
-  MODDMA_Config* tx_dma1;
-  MODDMA_Config* tx_dma2;
+  MODDMA_Config* cmd_dma;
+  MODDMA_Config* rx_dma;
+  MODDMA_Config* tx_dma;
 
-  rxData_t temp_rx_buffer1{};
-  rxData_t temp_rx_buffer2{};
+  linuxCncState_t volatile linuxcnc_state1{};
+  linuxCncState_t volatile linuxcnc_state2{};
+  pruState_t volatile pru_state1{};
+  pruState_t volatile pru_state2{};
+
+  volatile uint32_t rx_cmd = 0;
+  volatile uint32_t tx_cmd = PRU_DATA;
+
+  // Discard buffer for header-rejected payloads; sized to the larger of the two payload structs
+  static constexpr size_t RX_DISCARD_SIZE = sizeof(linuxCncState_t) > sizeof(pruState_t) ? sizeof(linuxCncState_t)
+                                                                                         : sizeof(pruState_t);
+  volatile uint8_t rx_discard[RX_DISCARD_SIZE]{};
+
+  // Mode of the last completed or currently armed payload
+  enum class RxMode : uint8_t { None = 0, Read = 1, Write = 2, Discard = 3 };
+  volatile RxMode rx_mode = RxMode::None;
+
   uint8_t reject_count = 0;
   volatile bool data_ready = false;
   volatile bool spi_error = false;
 
-  void tx1_callback();
-  void tx2_callback();
-  void rx1_callback();
-  void rx2_callback();
-  void err_callback();
+  void cmd_callback();
+  void rx_callback();
 
-  void rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx);
+  // Double-buffer pointers
+  volatile linuxCncState_t* linuxcnc_back = nullptr;
+  volatile pruState_t* pru_back = nullptr;
 
  public:
   SpiComms();
 
   static void data_ready_callback();
 
-  rxData_t volatile* rx_data;
-  txData_t volatile* tx_data;
+  linuxCncState_t volatile* linuxcnc_state;
+  pruState_t volatile* pru_state;
 
   volatile bool e_stop_active = false;
 
   [[noreturn]] void loop();
 
-  // Minimal accessors returning the whole volatile structs
-  [[nodiscard]] rxData_t volatile* get_rx() const;
-  [[nodiscard]] txData_t volatile* get_tx() const;
+  [[nodiscard]] linuxCncState_t volatile* get_linuxcnc_state() const;
+  [[nodiscard]] pruState_t volatile* get_pru_state() const;
 };
 
 #endif

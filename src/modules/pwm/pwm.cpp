@@ -8,7 +8,7 @@ PWM::PWM(const int var_number, const Pin* pin, const int period_us, SpiComms* co
       duty_cycle(0) {}
 
 void PWM::on_rx() {
-  const int32_t new_dc = this->comms->get_rx()->output_vars[this->var_number];
+  const int32_t new_dc = this->comms->get_linuxcnc_state()->output_vars[this->var_number];
   if (this->duty_cycle != new_dc) {
     this->duty_cycle = new_dc;
     this->pwm_pin->pulsewidth_us(this->period_us * this->duty_cycle / 1000);
