@@ -45,6 +45,9 @@ MODULE_AUTHOR("Scott Alford AKA scotta, modified by Konstantin Tcepliaev <f355@f
 MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");
 MODULE_LICENSE("GPL v3");
 
+static int spi_freq = 5000000;
+RTAPI_MP_INT(spi_freq, "SPI clock frequency in Hz (default 5,000,000)");
+
 #define f_period_s ((double)(l_period_ns * 1e-9))
 
 typedef struct {
@@ -562,14 +565,14 @@ void spi_transfer() {
 }
 
 int rt_peripheral_init(void) {
-  int ret5 = rpi5_spi_init(5000000);
+  int ret5 = rpi5_spi_init(spi_freq);
   if (ret5 == 1) {
     rtapi_print_msg(RTAPI_MSG_INFO, "Raspberry Pi 5, using rpi5 spi driver\n");
     spi_driver = SPI_RPI5;
     return 0;
   }
 
-  int ret4 = rpi4_spi_init(5000000);
+  int ret4 = rpi4_spi_init(spi_freq);
   if (ret4 == 1) {
     rtapi_print_msg(RTAPI_MSG_INFO, "Raspberry Pi 4, using rpi4 spi driver\n");
     spi_driver = SPI_RPI4;
