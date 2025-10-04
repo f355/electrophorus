@@ -14,8 +14,6 @@ SpiComms::SpiComms()
       rx_dma2(new MODDMA_Config()),
       tx_dma1(new MODDMA_Config()),
       tx_dma2(new MODDMA_Config()),
-      rx_memcpy_dma1(new MODDMA_Config()),
-      rx_memcpy_dma2(new MODDMA_Config()),
       rx_data(new rxData_t()),
       tx_data(new txData_t()) {
   // sanity-check the struct sizes
@@ -66,20 +64,6 @@ SpiComms::SpiComms()
       ->attach_tc(this, &SpiComms::rx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
-  rx_memcpy_dma1->channelNum(MODDMA::Channel_4)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer1))
-      ->dstMemAddr(reinterpret_cast<uint32_t>(rx_data))
-      ->transferSize(SPI_BUF_SIZE)
-      ->transferType(MODDMA::m2m)
-      ->attach_tc(&SpiComms::data_ready_callback);
-
-  rx_memcpy_dma2->channelNum(MODDMA::Channel_5)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer2))
-      ->dstMemAddr(reinterpret_cast<uint32_t>(rx_data))
-      ->transferSize(SPI_BUF_SIZE)
-      ->transferType(MODDMA::m2m)
-      ->attach_tc(&SpiComms::data_ready_callback);
-
   NVIC_SetPriority(DMA_IRQn, DMA_PRIORITY);
 
   this->tx_data->header = PRU_DATA;
@@ -105,15 +89,9 @@ void SpiComms::tx2_callback() {
   dma.Prepare(tx_dma1);
 }
 
-void SpiComms::rx1_callback() {
-  this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2, this->rx_memcpy_dma1,
-                         this->rx_memcpy_dma2->channelNum());
-}
+void SpiComms::rx1_callback() { this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2); }
 
-void SpiComms::rx2_callback() {
-  this->rx_callback_impl(this->temp_rx_buffer2, this->rx_dma1, this->rx_memcpy_dma2,
-                         this->rx_memcpy_dma1->channelNum());
-}
+void SpiComms::rx2_callback() { this->rx_callback_impl(this->temp_rx_buffer2, this->rx_dma1); }
 
 void SpiComms::data_ready_callback() {
   // trigger PendSV IRQ to signal that the data is ready
@@ -121,8 +99,7 @@ void SpiComms::data_ready_callback() {
 }
 
 // ReSharper disable once CppDFAUnreachableFunctionCall
-void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx, MODDMA_Config* memcpy,
-                                const uint32_t other_memcpy) {
+void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx) {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
@@ -134,14 +111,18 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
     case PRU_READ:
       data_ready = true;
       reject_count = 0;
-      dma.Disable(other_memcpy);
       break;
 
     case PRU_WRITE:
       data_ready = true;
       reject_count = 0;
       // don't copy the rx_data if the e-stop button is pressed
-      if (!this->e_stop_active) dma.Prepare(memcpy);
+      if (!this->e_stop_active) {
+        for (size_t i = 0; i < SPI_BUF_SIZE; i++) {
+          this->rx_data->buffer[i] = rx_buffer.buffer[i];
+        }
+        data_ready_callback();
+      }
       break;
 
     default:
@@ -149,7 +130,6 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
       if (reject_count > 5) {
         spi_error = true;
       }
-      dma.Disable(other_memcpy);
   }
 
   // swap Rx buffers

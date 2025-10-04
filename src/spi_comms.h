@@ -15,8 +15,6 @@ class SpiComms {
   MODDMA_Config* rx_dma2;
   MODDMA_Config* tx_dma1;
   MODDMA_Config* tx_dma2;
-  MODDMA_Config* rx_memcpy_dma1;
-  MODDMA_Config* rx_memcpy_dma2;
 
   rxData_t temp_rx_buffer1{};
   rxData_t temp_rx_buffer2{};
@@ -30,8 +28,7 @@ class SpiComms {
   void rx2_callback();
   void err_callback();
 
-  void rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx, MODDMA_Config* memcpy,
-                        uint32_t other_memcpy);
+  void rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx);
 
  public:
   SpiComms();
