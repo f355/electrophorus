@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "hal.h"
@@ -44,7 +45,6 @@
 MODULE_AUTHOR("Scott Alford AKA scotta, modified by Konstantin Tcepliaev <f355@f355.org>");
 MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");
 MODULE_LICENSE("GPL v3");
-
 
 #define SPI_READ_GAP_NS 20000L  // ~20 us
 #define SPI_WRITE_GAP_NS 6000L  // ~6 us
@@ -116,6 +116,17 @@ static int rt_peripheral_init();
 
 static void update_freq(void *arg, long l_period_ns);
 static void spi_write();
+
+static void busy_delay_ns(const long ns) {
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (;;) {
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const long long elapsed = (long long)(t1.tv_sec - t0.tv_sec) * 1000000000LL + (t1.tv_nsec - t0.tv_nsec);
+    if (elapsed >= ns) break;
+  }
+}
+
 static void spi_read();
 static inline void spi_xfer(uint8_t *rx, const uint8_t *tx, size_t len);
 
@@ -459,7 +470,7 @@ void spi_read() {
 
       // Split READ into header then payload
       spi_xfer((uint8_t *)&rx_cmd, (const uint8_t *)&cmd, sizeof(cmd));
-      rtapi_delay(SPI_READ_GAP_NS);
+      busy_delay_ns(SPI_READ_GAP_NS);
       spi_xfer((uint8_t *)&rx_state, spi_read_dummy_tx, sizeof(pruState_t));
 
       switch (rx_cmd)  // only process valid SPI payloads. This rejects bad payloads
@@ -577,7 +588,7 @@ void spi_write() {
       uint32_t rx_dummy = 0;
       spi_xfer((uint8_t *)&rx_dummy, (const uint8_t *)&cmd, sizeof(cmd));
     }
-    rtapi_delay(SPI_WRITE_GAP_NS);
+    busy_delay_ns(SPI_WRITE_GAP_NS);
     spi_xfer((uint8_t *)&rx_state, (uint8_t *)&tx_state, (sizeof(linuxCncState_t)));
   }
 }
