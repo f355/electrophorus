@@ -13,7 +13,7 @@
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)
 
-#pragma pack(push, 2)
+#pragma pack(push, 4)
 
 // struct for LinuxCNC -> PRU communication
 // byte size: 56
@@ -25,6 +25,7 @@ typedef union {
     int32_t output_vars[OUTPUT_VARS];
     uint8_t stepgen_enable_mask;
     uint16_t outputs;
+    uint32_t crc32;
   };
 } linuxCncData_t;
 
@@ -37,6 +38,7 @@ typedef union {
     int64_t stepgen_feedback[STEPGENS];
     int32_t input_vars[INPUT_VARS];
     uint16_t inputs;
+    uint32_t crc32;
   };
 } pruData_t;
 

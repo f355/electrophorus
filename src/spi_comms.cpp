@@ -26,41 +26,33 @@ SpiComms::SpiComms()
 
   tx_dma1->channelNum(MODDMA::Channel_0)
       ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
-      ->dstMemAddr(0)
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
-      ->srcConn(0)
       ->dstConn(MODDMA::SSP0_Tx)
       ->attach_tc(this, &SpiComms::tx1_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   tx_dma2->channelNum(MODDMA::Channel_1)
       ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
-      ->dstMemAddr(0)
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
-      ->srcConn(0)
       ->dstConn(MODDMA::SSP0_Tx)
       ->attach_tc(this, &SpiComms::tx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma1->channelNum(MODDMA::Channel_2)
-      ->srcMemAddr(0)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer1))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
-      ->dstConn(0)
       ->attach_tc(this, &SpiComms::rx1_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma2->channelNum(MODDMA::Channel_3)
-      ->srcMemAddr(0)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer2))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
-      ->dstConn(0)
       ->attach_tc(this, &SpiComms::rx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 

@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "hal.h"
@@ -114,7 +115,7 @@ static int rt_peripheral_init();
 static void update_freq(void *arg, long l_period_ns);
 static void spi_write();
 static void spi_read();
-static void spi_transfer();
+static void spi_transfer(size_t offset, size_t len);
 
 int rtapi_app_main(void) {
   // connect to the HAL, initialise the driver
@@ -434,6 +435,16 @@ void update_freq(void *arg, const long l_period_ns) {
   }
 }
 
+static void busy_delay_ns(const long ns) {
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (;;) {
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const long long elapsed = (long long)(t1.tv_sec - t0.tv_sec) * 1000000000LL + (t1.tv_nsec - t0.tv_nsec);
+    if (elapsed >= ns) break;
+  }
+}
+
 void spi_read() {
   // Data header
   tx_data.header = PRU_READ;
@@ -443,7 +454,9 @@ void spi_read() {
       // reset rising edge detected, try SPI transfer and reset OR PRU running
 
       // Transfer to and from the PRU
-      spi_transfer();
+      spi_transfer(0, 4);
+      busy_delay_ns(40000);
+      spi_transfer(4, SPI_BUF_SIZE - 4);
 
       switch (rx_data.header)  // only process valid SPI payloads. This rejects bad payloads
       {
@@ -547,17 +560,17 @@ void spi_write() {
   }
 
   if (*state->spi_status) {
-    spi_transfer();
+    spi_transfer(0, SPI_BUF_SIZE);
   }
 }
 
-void spi_transfer() {
+void spi_transfer(const size_t offset, const size_t len) {
   switch (spi_driver) {
     case SPI_RPI4:
-      rpi4_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
+      rpi4_spi_xfer(rx_data.buffer + offset, tx_data.buffer + offset, len);
       break;
     case SPI_RPI5:
-      rpi5_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
+      rpi5_spi_xfer(rx_data.buffer + offset, tx_data.buffer + offset, len);
       break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");
