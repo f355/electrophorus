@@ -14,18 +14,13 @@ SpiComms::SpiComms()
       rx_dma2(new MODDMA_Config()),
       tx_dma1(new MODDMA_Config()),
       tx_dma2(new MODDMA_Config()),
-      rx_data(new rxData_t()),
-      tx_data(new txData_t()) {
-  // sanity-check the struct sizes
-  if constexpr (sizeof(rxData_t) != sizeof(txData_t)) {
-    // ReSharper disable once CppDFAUnreachableCode
-    error("rx and tx buffer size mismatch!");
-  }
+      linuxcnc_state(new linuxCncState_t()),
+      pru_state(new pruState_t()) {
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 
   tx_dma1->channelNum(MODDMA::Channel_0)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
+      ->srcMemAddr(reinterpret_cast<uint32_t>(pru_state))
       ->dstMemAddr(0)
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
@@ -35,7 +30,7 @@ SpiComms::SpiComms()
       ->attach_err(this, &SpiComms::err_callback);
 
   tx_dma2->channelNum(MODDMA::Channel_1)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(tx_data))
+      ->srcMemAddr(reinterpret_cast<uint32_t>(pru_state))
       ->dstMemAddr(0)
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
@@ -66,7 +61,7 @@ SpiComms::SpiComms()
 
   NVIC_SetPriority(DMA_IRQn, DMA_PRIORITY);
 
-  this->tx_data->header = PRU_DATA;
+  this->pru_state->header = PRU_DATA;
 
   // Pass the configurations to the controller
   dma.Prepare(rx_dma1);
@@ -98,8 +93,11 @@ void SpiComms::data_ready_callback() {
   SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 }
 
+volatile linuxCncState_t* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
+volatile pruState_t* SpiComms::get_pru_state() const { return this->pru_state; }
+
 // ReSharper disable once CppDFAUnreachableFunctionCall
-void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx) {
+void SpiComms::rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config* other_rx) {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
@@ -116,10 +114,10 @@ void SpiComms::rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_
     case PRU_WRITE:
       data_ready = true;
       reject_count = 0;
-      // don't copy the rx_data if the e-stop button is pressed
+      // don't copy the linuxcnc_state if the e-stop button is pressed
       if (!this->e_stop_active) {
         for (size_t i = 0; i < SPI_BUF_SIZE; i++) {
-          this->rx_data->buffer[i] = rx_buffer.buffer[i];
+          this->linuxcnc_state->buffer[i] = rx_buffer.buffer[i];
         }
         data_ready_callback();
       }
@@ -200,7 +198,7 @@ void SpiComms::loop() {
 
         // set the whole rxData buffer to 0
         // can't memset volatile memory, so use a loop instead
-        for (volatile uint8_t& b : this->rx_data->buffer) b = 0;
+        for (volatile uint8_t& b : this->linuxcnc_state->buffer) b = 0;
         data_ready_callback();
 
         current_state = ST_IDLE;
@@ -209,3 +207,7 @@ void SpiComms::loop() {
     wait_us(1000);
   }
 }
+
+static_assert(sizeof(linuxCncState_t) == sizeof(pruState_t), "rx and tx buffer size mismatch!");
+static_assert(sizeof(linuxCncState_t) <= SPI_BUF_SIZE, "rx buffer too small!");
+static_assert(sizeof(pruState_t) <= SPI_BUF_SIZE, "tx buffer too small!");

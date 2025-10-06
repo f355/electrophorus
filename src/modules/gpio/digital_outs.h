@@ -5,7 +5,7 @@
 #include "spi_comms.h"
 
 class DigitalOuts final : public Module {
-  volatile uint16_t* outputs;
+  SpiComms* comms;
 
   uint8_t num_pins;
   LPC_GPIO_TypeDef** ports;
@@ -13,7 +13,7 @@ class DigitalOuts final : public Module {
   uint16_t invert_mask;
 
  public:
-  DigitalOuts(uint8_t num_pins, const outputPin_t pins[], volatile rxData_t* rx_data);
+  DigitalOuts(uint8_t num_pins, const outputPin_t pins[], SpiComms* comms);
 
   bool listens_to_rx() override;
   void on_rx() override;

@@ -2,8 +2,8 @@
 
 #include "pin.h"
 
-DigitalIns::DigitalIns(const uint8_t num_pins, const inputPin_t pins[], volatile txData_t* tx_data)
-    : inputs(&tx_data->inputs),
+DigitalIns::DigitalIns(const uint8_t num_pins, const inputPin_t pins[], SpiComms* comms)
+    : comms(comms),
       num_pins(num_pins),
       ports(new LPC_GPIO_TypeDef*[num_pins]),
       pins(new uint8_t[num_pins]),
@@ -34,7 +34,7 @@ DigitalIns::DigitalIns(const uint8_t num_pins, const inputPin_t pins[], volatile
 void DigitalIns::run_servo() {
   uint16_t pin_states = 0;
   for (uint8_t i = 0; i < num_pins; i++) pin_states |= (this->ports[i]->FIOPIN >> this->pins[i] & 0b1) << i;
-  *this->inputs = pin_states ^ this->invert_mask;
+  comms->get_pru_state()->inputs = pin_states ^ this->invert_mask;
 }
 
 bool DigitalIns::is_servo() { return true; }

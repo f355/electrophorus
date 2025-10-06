@@ -5,7 +5,7 @@
 #include "spi_comms.h"
 
 class DigitalIns final : public Module {
-  volatile uint16_t* inputs;
+  SpiComms* comms;
 
   uint8_t num_pins;
   LPC_GPIO_TypeDef** ports;
@@ -13,7 +13,7 @@ class DigitalIns final : public Module {
   uint16_t invert_mask;
 
  public:
-  DigitalIns(uint8_t num_pins, const inputPin_t pins[], volatile txData_t* tx_data);
+  DigitalIns(uint8_t num_pins, const inputPin_t pins[], SpiComms* comms);
 
   bool is_servo() override;
   void run_servo() override;

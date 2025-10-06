@@ -95,11 +95,8 @@ typedef struct {
 
 static state_t *state;
 
-typedef pruData_t rxData_t;
-typedef linuxCncData_t txData_t;
-
-static txData_t tx_data;
-static rxData_t rx_data;
+static linuxCncState_t linuxcnc_state;
+static pruState_t pru_state;
 
 /* other globals */
 static int comp_id;  // component ID
@@ -430,13 +427,13 @@ void update_freq(void *arg, const long l_period_ns) {
 
     *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
 
-    tx_data.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
+    linuxcnc_state.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
   }
 }
 
 void spi_read() {
   // Data header
-  tx_data.header = PRU_READ;
+  linuxcnc_state.header = PRU_READ;
 
   if (*(state->spi_enable)) {
     if ((*state->spi_reset && !state->spi_reset_old) || *state->spi_status) {
@@ -445,7 +442,7 @@ void spi_read() {
       // Transfer to and from the PRU
       spi_transfer();
 
-      switch (rx_data.header)  // only process valid SPI payloads. This rejects bad payloads
+      switch (pru_state.header)  // only process valid SPI payloads. This rejects bad payloads
       {
         case PRU_DATA:
           // we have received a GOOD payload from the PRU
@@ -454,7 +451,7 @@ void spi_read() {
           for (int i = 0; i < STEPGENS; i++) {
             stepper_state_t *s = &state->stepgens[i];
 
-            const int64_t acc = rx_data.stepgen_feedback[i];
+            const int64_t acc = pru_state.stepgen_feedback[i];
 
             // those tricky users are always trying to get us to divide by zero
             if (fabs(s->hal.param.position_scale) < 1e-6) {
@@ -488,12 +485,12 @@ void spi_read() {
           }
 
           for (int i = 0; i < INPUT_VARS; i++) {
-            *state->input_vars[i] = rx_data.input_vars[i];
+            *state->input_vars[i] = pru_state.input_vars[i];
           }
 
           // Inputs
           for (int i = 0; i < INPUT_PINS; i++) {
-            if ((rx_data.inputs & (1 << i)) != 0) {
+            if ((pru_state.inputs & (1 << i)) != 0) {
               *state->inputs[i] = 1;               // input is high
               *state->inputs[i + INPUT_PINS] = 0;  // inverted 'not' is offset by number of digital inputs.
             } else {
@@ -508,7 +505,7 @@ void spi_read() {
           *state->spi_status = 0;
           rtapi_print("Bad SPI payload:");
           for (int i = 0; i < SPI_BUF_SIZE; i++) {
-            rtapi_print(" %02x", rx_data.buffer[i]);
+            rtapi_print(" %02x", pru_state.buffer[i]);
           }
           rtapi_print("\n");
       }
@@ -523,26 +520,26 @@ void spi_read() {
 void spi_write() {
   int i;
 
-  tx_data.header = PRU_WRITE;
+  linuxcnc_state.header = PRU_WRITE;
 
   for (i = 0; i < STEPGENS; i++) {
     const stepper_state_t *s = &state->stepgens[i];
     if (*s->hal.pin.enable == 1) {
-      tx_data.stepgen_enable_mask |= 1 << i;
+      linuxcnc_state.stepgen_enable_mask |= 1 << i;
     } else {
-      tx_data.stepgen_enable_mask &= ~(1 << i);
+      linuxcnc_state.stepgen_enable_mask &= ~(1 << i);
     }
   }
 
   for (i = 0; i < OUTPUT_VARS; i++) {
-    tx_data.output_vars[i] = (int32_t)*state->output_vars[i];
+    linuxcnc_state.output_vars[i] = (int32_t)*state->output_vars[i];
   }
 
   for (i = 0; i < OUTPUT_PINS; i++) {
     if (*state->outputs[i] == 1) {
-      tx_data.outputs |= 1 << i;
+      linuxcnc_state.outputs |= 1 << i;
     } else {
-      tx_data.outputs &= ~(1 << i);
+      linuxcnc_state.outputs &= ~(1 << i);
     }
   }
 
@@ -554,10 +551,10 @@ void spi_write() {
 void spi_transfer() {
   switch (spi_driver) {
     case SPI_RPI4:
-      rpi4_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
+      rpi4_spi_xfer(pru_state.buffer, linuxcnc_state.buffer, SPI_BUF_SIZE);
       break;
     case SPI_RPI5:
-      rpi5_spi_xfer(rx_data.buffer, tx_data.buffer, SPI_BUF_SIZE);
+      rpi5_spi_xfer(pru_state.buffer, linuxcnc_state.buffer, SPI_BUF_SIZE);
       break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");

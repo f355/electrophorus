@@ -2,8 +2,8 @@
 
 #include "pin.h"
 
-DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], volatile rxData_t* rx_data)
-    : outputs(&rx_data->outputs),
+DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], SpiComms* comms)
+    : comms(comms),
       num_pins(num_pins),
       ports(new LPC_GPIO_TypeDef*[num_pins]),
       pin_masks(new uint32_t[num_pins]),
@@ -26,7 +26,7 @@ DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], volat
 }
 
 void DigitalOuts::on_rx() {
-  const uint16_t pin_states = *this->outputs ^ invert_mask;
+  const uint16_t pin_states = this->comms->get_linuxcnc_state()->outputs ^ invert_mask;
   for (uint8_t i = 0; i < num_pins; i++) {
     if (pin_states >> i & 0b1) {
       ports[i]->FIOSET |= pin_masks[i];

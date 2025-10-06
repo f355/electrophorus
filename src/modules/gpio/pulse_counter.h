@@ -6,12 +6,14 @@
 #include "spi_comms.h"
 
 class PulseCounter final : public Module {
-  volatile int32_t* variable;
+  SpiComms* comms;
+  uint8_t var_number;
+
   volatile int32_t counter = 0;
   void interrupt_handler();
 
  public:
-  PulseCounter(int var_number, const Pin* pin, volatile txData_t* tx_data);
+  PulseCounter(uint8_t var_number, const Pin* pin, SpiComms* comms);
 
   bool is_servo() override;
   void run_servo() override;

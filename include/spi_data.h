@@ -26,7 +26,7 @@ typedef union {
     uint8_t stepgen_enable_mask;
     uint16_t outputs;
   };
-} linuxCncData_t;
+} linuxCncState_t;
 
 // struct for PRU -> LinuxCNC communication
 // byte size: 50
@@ -38,7 +38,7 @@ typedef union {
     int32_t input_vars[INPUT_VARS];
     uint16_t inputs;
   };
-} pruData_t;
+} pruState_t;
 
 #pragma pack(pop)
 

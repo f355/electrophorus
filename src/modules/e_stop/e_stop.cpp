@@ -30,9 +30,9 @@ void EStop::fall_handler() const {
 void EStop::engaged() const {
   this->comms->e_stop_active = true;
   // kill the steppers
-  this->comms->rx_data->stepgen_enable_mask = 0;
+  this->comms->get_linuxcnc_state()->stepgen_enable_mask = 0;
   // kill the spindle (assumes the spindle speed is the first output_var)
-  this->comms->rx_data->output_vars[0] = 0;
+  this->comms->get_linuxcnc_state()->output_vars[0] = 0;
   SpiComms::data_ready_callback();
 }
 

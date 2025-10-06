@@ -5,9 +5,6 @@
 #include "mbed.h"
 #include "spi_data.h"
 
-typedef linuxCncData_t rxData_t;
-typedef pruData_t txData_t;
-
 class SpiComms {
   MODDMA dma;
 
@@ -16,8 +13,12 @@ class SpiComms {
   MODDMA_Config* tx_dma1;
   MODDMA_Config* tx_dma2;
 
-  rxData_t temp_rx_buffer1{};
-  rxData_t temp_rx_buffer2{};
+  volatile linuxCncState_t* linuxcnc_state;
+  volatile pruState_t* pru_state;
+
+  linuxCncState_t temp_rx_buffer1{};
+  linuxCncState_t temp_rx_buffer2{};
+
   uint8_t reject_count = 0;
   volatile bool data_ready = false;
   volatile bool spi_error = false;
@@ -28,15 +29,15 @@ class SpiComms {
   void rx2_callback();
   void err_callback();
 
-  void rx_callback_impl(const rxData_t& rx_buffer, MODDMA_Config* other_rx);
+  void rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config* other_rx);
 
  public:
   SpiComms();
 
   static void data_ready_callback();
 
-  rxData_t volatile* rx_data;
-  txData_t volatile* tx_data;
+  [[nodiscard]] volatile linuxCncState_t* get_linuxcnc_state() const;
+  [[nodiscard]] volatile pruState_t* get_pru_state() const;
 
   volatile bool e_stop_active = false;
 

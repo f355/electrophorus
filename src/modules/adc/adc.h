@@ -6,14 +6,15 @@
 #include "spi_comms.h"
 
 class ADC final : public Module {
-  volatile int32_t* variable;  // pointer where to put the feedback
+  SpiComms* comms;
+  uint8_t var_number;
   AnalogIn* adc;
 
   uint32_t run_every;
   uint32_t counter;
 
  public:
-  ADC(int var_number, Pin* pin, volatile txData_t* tx_data);
+  ADC(uint8_t var_number, Pin* pin, SpiComms* comms);
 
   bool is_servo() override;
   void run_servo() override;

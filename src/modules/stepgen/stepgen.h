@@ -6,11 +6,9 @@
 #include "spi_comms.h"
 
 class Stepgen final : public Module {
-  int stepper_enable_mask;
-
-  volatile float *commanded_frequency;
-  volatile int64_t *step_position;
-  volatile uint8_t *stepper_enable;
+  SpiComms *comms;
+  uint8_t stepgen_number;
+  uint8_t stepgen_enable_mask;
 
   uint32_t ticker_frequency;
   volatile bool dir_flipped = false;  // indicates that the direction has changed
@@ -21,8 +19,7 @@ class Stepgen final : public Module {
   volatile int64_t increment = 0;
 
  public:
-  Stepgen(int stepper_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, volatile rxData_t *rx_data,
-          volatile txData_t *tx_data);
+  Stepgen(uint8_t stepgen_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, SpiComms *comms);
 
   ~Stepgen() = default;
 
