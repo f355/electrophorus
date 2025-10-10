@@ -530,6 +530,24 @@ class MODDMA {
   void Enable(MODDMA_Config *config) { Enable(config->channelNum()); }
 
   /**
+   * Fast re-arm for m2p: update source address and size, optionally enable.
+   * Assumes Setup() has been called once to set static bits and peripheral.
+   */
+  uint32_t QuickReload_m2p(MODDMA_Config *config, uint32_t srcAddr, uint32_t transferSize, bool enable = true);
+
+  /**
+   * Fast re-arm for p2m: update destination address and size, optionally enable.
+   * Assumes Setup() has been called once to set static bits and peripheral.
+   */
+  uint32_t QuickReload_p2m(MODDMA_Config *config, uint32_t dstAddr, uint32_t transferSize, bool enable = true);
+
+  /**
+   * Fast re-arm when addresses are unchanged: update size only, optionally enable.
+   */
+  uint32_t QuickReload_size(MODDMA_Config *config, uint32_t transferSize, bool enable = true);
+
+
+  /**
    * Disable a channel and end data transfer.
    *
    * @ingroup API

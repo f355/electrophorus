@@ -56,7 +56,7 @@ void Stepgen::run_base() {
 void Stepgen::on_rx() {
   const float commanded_frequency = this->comms->get_linuxcnc_state()->stepgen_freq_command[this->stepgen_number];
   if ((this->comms->get_linuxcnc_state()->stepgen_enable_mask & this->stepgen_enable_mask) == 0 ||
-      (this->last_commanded_frequency == commanded_frequency)) {
+      this->last_commanded_frequency == commanded_frequency) {
     return;  // stepper is disabled or the command hasn't changed, nothing to do
   }
 

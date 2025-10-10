@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "hal.h"
@@ -45,8 +46,13 @@ MODULE_AUTHOR("Scott Alford AKA scotta, modified by Konstantin Tcepliaev <f355@f
 MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");
 MODULE_LICENSE("GPL v3");
 
+#define SPI_READ_GAP_NS 50000L   // ~50 us
+#define SPI_WRITE_GAP_NS 50000L  // ~50 us
+
 static int spi_freq = 5000000;
 RTAPI_MP_INT(spi_freq, "SPI clock frequency in Hz (default 5,000,000)");
+
+static const uint8_t spi_read_dummy_tx[sizeof(pruState_t)] = {0};
 
 #define f_period_s ((double)(l_period_ns * 1e-9))
 
@@ -95,8 +101,8 @@ typedef struct {
 
 static state_t *state;
 
-static linuxCncState_t linuxcnc_state;
-static pruState_t pru_state;
+static linuxCncState_t tx_state;
+static pruState_t rx_state;
 
 /* other globals */
 static int comp_id;  // component ID
@@ -110,8 +116,19 @@ static int rt_peripheral_init();
 
 static void update_freq(void *arg, long l_period_ns);
 static void spi_write();
+
+static void busy_delay_ns(const long ns) {
+  struct timespec t0, t1;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  for (;;) {
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const long long elapsed = (long long)(t1.tv_sec - t0.tv_sec) * 1000000000LL + (t1.tv_nsec - t0.tv_nsec);
+    if (elapsed >= ns) break;
+  }
+}
+
 static void spi_read();
-static void spi_transfer();
+static inline void spi_xfer(uint8_t *rx, const uint8_t *tx, size_t len);
 
 int rtapi_app_main(void) {
   // connect to the HAL, initialise the driver
@@ -359,6 +376,7 @@ static void stepgen_instance_position_control(stepper_state_t *s, const long l_p
 }
 
 void update_freq(void *arg, const long l_period_ns) {
+  busy_delay_ns(SPI_READ_GAP_NS);
   state_t *state = arg;
 
   // loop through generators
@@ -427,87 +445,94 @@ void update_freq(void *arg, const long l_period_ns) {
 
     *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
 
-    linuxcnc_state.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
+    tx_state.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
   }
 }
 
+static uint32_t crc32_ieee(const uint8_t *data, const size_t len) {
+  uint32_t crc = 0xFFFFFFFFu;
+  for (size_t i = 0; i < len; ++i) {
+    crc ^= data[i];
+    for (int k = 0; k < 8; ++k) {
+      const uint32_t mask = -(crc & 1u);
+      crc = (crc >> 1) ^ (0xEDB88320u & mask);
+    }
+  }
+  return ~crc;
+}
+
 void spi_read() {
-  // Data header
-  linuxcnc_state.header = PRU_READ;
+  uint32_t rx_dummy = 0;
+  const uint32_t cmd = PRU_READ;
 
   if (*(state->spi_enable)) {
     if ((*state->spi_reset && !state->spi_reset_old) || *state->spi_status) {
       // reset rising edge detected, try SPI transfer and reset OR PRU running
 
-      // Transfer to and from the PRU
-      spi_transfer();
+      spi_xfer((uint8_t *)&rx_dummy, (const uint8_t *)&cmd, sizeof(cmd));
+      busy_delay_ns(SPI_READ_GAP_NS);
+      spi_xfer((uint8_t *)&rx_state, spi_read_dummy_tx, sizeof(pruState_t));
 
-      switch (pru_state.header)  // only process valid SPI payloads. This rejects bad payloads
-      {
-        case PRU_DATA:
-          // we have received a GOOD payload from the PRU
-          *state->spi_status = 1;
+      // Verify CRC of PRU->LinuxCNC payload; ignore the 4 bytes clocked during the command phase
+      if (rx_state.crc32 != crc32_ieee((const uint8_t *)&rx_state, (offsetof(pruState_t, crc32)))) {
+        *state->spi_status = 0;
+        rtapi_print("Bad SPI CRC:");
+        for (int i = 0; i < (int)sizeof(pruState_t); i++) rtapi_print(" %02x", ((uint8_t *)&rx_state)[i]);
+        rtapi_print("\n");
+      } else {
+        // GOOD payload from PRU
+        *state->spi_status = 1;
 
-          for (int i = 0; i < STEPGENS; i++) {
-            stepper_state_t *s = &state->stepgens[i];
+        for (int i = 0; i < STEPGENS; i++) {
+          stepper_state_t *s = &state->stepgens[i];
 
-            const int64_t acc = pru_state.stepgen_feedback[i];
+          const int64_t acc = rx_state.stepgen_feedback[i];
 
-            // those tricky users are always trying to get us to divide by zero
-            if (fabs(s->hal.param.position_scale) < 1e-6) {
-              if (s->hal.param.position_scale >= 0.0) {
-                s->hal.param.position_scale = 1.0;
-                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
-              } else {
-                s->hal.param.position_scale = -1.0;
-                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
-              }
-            }
-
-            // The accumulator is a 32.32 bit fixed-point
-            // representation of the current stepper position.
-            // The fractional part gives accurate velocity at low speeds, and
-            // sub-step position feedback (like sw stepgen).
-            int64_t acc_delta = acc - s->prev_step_position;
-            if (acc_delta > INT64_MAX) {
-              acc_delta -= UINT64_MAX;
-            } else if (acc_delta < INT64_MIN) {
-              acc_delta += UINT64_MAX;
-            }
-            s->step_position += acc_delta;
-
-            if (*s->hal.pin.position_reset != 0) {
-              s->step_position = 0;
-            }
-
-            *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
-            s->prev_step_position = acc;
-          }
-
-          for (int i = 0; i < INPUT_VARS; i++) {
-            *state->input_vars[i] = pru_state.input_vars[i];
-          }
-
-          // Inputs
-          for (int i = 0; i < INPUT_PINS; i++) {
-            if ((pru_state.inputs & (1 << i)) != 0) {
-              *state->inputs[i] = 1;               // input is high
-              *state->inputs[i + INPUT_PINS] = 0;  // inverted 'not' is offset by number of digital inputs.
+          // those tricky users are always trying to get us to divide by zero
+          if (fabs(s->hal.param.position_scale) < 1e-6) {
+            if (s->hal.param.position_scale >= 0.0) {
+              s->hal.param.position_scale = 1.0;
+              rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
             } else {
-              *state->inputs[i] = 0;               // input is low
-              *state->inputs[i + INPUT_PINS] = 1;  // inverted 'not' is offset by number of digital inputs.
+              s->hal.param.position_scale = -1.0;
+              rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
             }
           }
-          break;
 
-        default:
-          // we have received a BAD payload from the PRU
-          *state->spi_status = 0;
-          rtapi_print("Bad SPI payload:");
-          for (int i = 0; i < SPI_BUF_SIZE; i++) {
-            rtapi_print(" %02x", pru_state.buffer[i]);
+          // The accumulator is a 32.32 bit fixed-point
+          // representation of the current stepper position.
+          // The fractional part gives accurate velocity at low speeds, and
+          // sub-step position feedback (like sw stepgen).
+          int64_t acc_delta = acc - s->prev_step_position;
+          if (acc_delta > INT64_MAX) {
+            acc_delta -= UINT64_MAX;
+          } else if (acc_delta < INT64_MIN) {
+            acc_delta += UINT64_MAX;
           }
-          rtapi_print("\n");
+          s->step_position += acc_delta;
+
+          if (*s->hal.pin.position_reset != 0) {
+            s->step_position = 0;
+          }
+
+          *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
+          s->prev_step_position = acc;
+        }
+
+        for (int i = 0; i < INPUT_VARS; i++) {
+          *state->input_vars[i] = rx_state.input_vars[i];
+        }
+
+        // Inputs
+        for (int i = 0; i < INPUT_PINS; i++) {
+          if ((rx_state.inputs & (1 << i)) != 0) {
+            *state->inputs[i] = 1;               // input is high
+            *state->inputs[i + INPUT_PINS] = 0;  // inverted 'not' is offset by number of digital inputs.
+          } else {
+            *state->inputs[i] = 0;               // input is low
+            *state->inputs[i + INPUT_PINS] = 1;  // inverted 'not' is offset by number of digital inputs.
+          }
+        }
       }
     }
   } else {
@@ -520,41 +545,47 @@ void spi_read() {
 void spi_write() {
   int i;
 
-  linuxcnc_state.header = PRU_WRITE;
+  const uint32_t cmd = PRU_WRITE;
 
   for (i = 0; i < STEPGENS; i++) {
     const stepper_state_t *s = &state->stepgens[i];
     if (*s->hal.pin.enable == 1) {
-      linuxcnc_state.stepgen_enable_mask |= 1 << i;
+      tx_state.stepgen_enable_mask |= 1 << i;
     } else {
-      linuxcnc_state.stepgen_enable_mask &= ~(1 << i);
+      tx_state.stepgen_enable_mask &= ~(1 << i);
     }
   }
 
   for (i = 0; i < OUTPUT_VARS; i++) {
-    linuxcnc_state.output_vars[i] = (int32_t)*state->output_vars[i];
+    tx_state.output_vars[i] = (int32_t)*state->output_vars[i];
   }
 
   for (i = 0; i < OUTPUT_PINS; i++) {
     if (*state->outputs[i] == 1) {
-      linuxcnc_state.outputs |= 1 << i;
+      tx_state.outputs |= 1 << i;
     } else {
-      linuxcnc_state.outputs &= ~(1 << i);
+      tx_state.outputs &= ~(1 << i);
     }
   }
 
   if (*state->spi_status) {
-    spi_transfer();
+    // compute CRC for Linux->PRU payload (PRU_WRITE)
+    tx_state.crc32 = crc32_ieee((const uint8_t *)&tx_state, (offsetof(linuxCncState_t, crc32)));
+
+    uint32_t rx_dummy = 0;
+    spi_xfer((uint8_t *)&rx_dummy, (const uint8_t *)&cmd, sizeof(cmd));
+
+    busy_delay_ns(SPI_WRITE_GAP_NS);
+    spi_xfer((uint8_t *)&rx_state, (uint8_t *)&tx_state, (sizeof(linuxCncState_t)));
   }
 }
-
-void spi_transfer() {
+static inline void spi_xfer(uint8_t *rx, const uint8_t *tx, const size_t len) {
   switch (spi_driver) {
     case SPI_RPI4:
-      rpi4_spi_xfer(pru_state.buffer, linuxcnc_state.buffer, SPI_BUF_SIZE);
+      rpi4_spi_xfer(rx, tx, len);
       break;
     case SPI_RPI5:
-      rpi5_spi_xfer(pru_state.buffer, linuxcnc_state.buffer, SPI_BUF_SIZE);
+      rpi5_spi_xfer(rx, tx, len);
       break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");

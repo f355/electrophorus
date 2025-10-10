@@ -139,33 +139,34 @@ int rpi4_spi_init(int frequency_hz) {
 
 void rpi4_spi_xfer(uint8_t *rx, const uint8_t *tx, size_t len) {
   if (!rpi4_spi0_base) return;
-  for (size_t i = 0; i < len; ++i) {
-    /* Clear TX/RX FIFOs and start transfer (TA) */
-    uint32_t cs = rpi4_rd32(rpi4_spi0_base, SPI0_CS);
-    cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
-    rpi4_wr32(rpi4_spi0_base, SPI0_CS, cs);
 
-    cs = rpi4_rd32(rpi4_spi0_base, SPI0_CS);
-    cs &= ~SPI0_CS_CS_MASK; /* CS0 */
-    cs |= SPI0_CS_TA;       /* transfer active */
-    rpi4_wr32(rpi4_spi0_base, SPI0_CS, cs);
+  /* Clear TX/RX FIFOs once and start a single continuous transfer (TA) */
+  uint32_t cs = rpi4_rd32(rpi4_spi0_base, SPI0_CS);
+  cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
+  rpi4_wr32(rpi4_spi0_base, SPI0_CS, cs);
 
-    /* Wait for TXD, then write one byte */
-    while ((rpi4_rd32(rpi4_spi0_base, SPI0_CS) & SPI0_CS_TXD) == 0) {
+  cs = rpi4_rd32(rpi4_spi0_base, SPI0_CS);
+  cs &= ~SPI0_CS_CS_MASK; /* CS0 */
+  cs |= SPI0_CS_TA;       /* transfer active */
+  rpi4_wr32(rpi4_spi0_base, SPI0_CS, cs);
+
+  /* Stream bytes while keeping CS asserted */
+  size_t txi = 0, rxi = 0;
+  while (rxi < len) {
+    /* Feed TX when FIFO can accept */
+    if (txi < len && (rpi4_rd32(rpi4_spi0_base, SPI0_CS) & SPI0_CS_TXD)) {
+      rpi4_wr32(rpi4_spi0_base, SPI0_FIFO, (uint32_t)tx[txi++]);
     }
-    rpi4_wr32(rpi4_spi0_base, SPI0_FIFO, (uint32_t)tx[i]);
-
-    /* Wait for DONE */
-    while ((rpi4_rd32(rpi4_spi0_base, SPI0_CS) & SPI0_CS_DONE) == 0) {
+    /* Drain RX when data present */
+    if (rpi4_rd32(rpi4_spi0_base, SPI0_CS) & SPI0_CS_RXD) {
+      rx[rxi++] = (uint8_t)rpi4_rd32(rpi4_spi0_base, SPI0_FIFO);
     }
-
-    /* Read back */
-    uint8_t rb = (uint8_t)rpi4_rd32(rpi4_spi0_base, SPI0_FIFO);
-    rx[i] = rb;
-
-    /* End transfer (deassert CS) */
-    cs = rpi4_rd32(rpi4_spi0_base, SPI0_CS);
-    cs &= ~SPI0_CS_TA;
-    rpi4_wr32(rpi4_spi0_base, SPI0_CS, cs);
   }
+
+  /* Wait for final DONE and deassert CS */
+  while ((rpi4_rd32(rpi4_spi0_base, SPI0_CS) & SPI0_CS_DONE) == 0) {
+  }
+  cs = rpi4_rd32(rpi4_spi0_base, SPI0_CS);
+  cs &= ~SPI0_CS_TA;
+  rpi4_wr32(rpi4_spi0_base, SPI0_CS, cs);
 }

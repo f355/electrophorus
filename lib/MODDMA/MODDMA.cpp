@@ -24,6 +24,51 @@
 namespace AjK {
 
 // Create a "hook" for our ISR to make callbacks. Set by init()
+
+uint32_t MODDMA::QuickReload_m2p(MODDMA_Config *config, uint32_t srcAddr, uint32_t transferSize, bool enable) {
+  // Expect transferType m2p, peripheral dest already configured by Setup()
+  LPC_GPDMACH_TypeDef *pChannel = (LPC_GPDMACH_TypeDef *)Channel_p(config->channelNum());
+  // Update RAM-side source address
+  pChannel->DMACCSrcAddr = srcAddr;
+  // Reload size; preserve static control bits; ensure I bit remains set
+  uint32_t ctrl = pChannel->DMACCControl;
+  ctrl &= ~((uint32_t)0xFFF); // clear size field
+  ctrl |= CxControl_TransferSize(transferSize) | CxControl_I();
+  pChannel->DMACCControl = ctrl;
+  if (enable) {
+    pChannel->DMACCConfig |= _E;
+  }
+  return ctrl;
+}
+
+uint32_t MODDMA::QuickReload_p2m(MODDMA_Config *config, uint32_t dstAddr, uint32_t transferSize, bool enable) {
+  // Expect transferType p2m, peripheral src already configured by Setup()
+  LPC_GPDMACH_TypeDef *pChannel = (LPC_GPDMACH_TypeDef *)Channel_p(config->channelNum());
+  // Update RAM-side destination address
+  pChannel->DMACCDestAddr = dstAddr;
+  // Reload size; preserve static control bits; ensure I bit remains set
+  uint32_t ctrl = pChannel->DMACCControl;
+  ctrl &= ~((uint32_t)0xFFF); // clear size field
+  ctrl |= CxControl_TransferSize(transferSize) | CxControl_I();
+  pChannel->DMACCControl = ctrl;
+  if (enable) {
+    pChannel->DMACCConfig |= _E;
+  }
+  return ctrl;
+}
+
+uint32_t MODDMA::QuickReload_size(MODDMA_Config *config, uint32_t transferSize, bool enable) {
+  LPC_GPDMACH_TypeDef *pChannel = (LPC_GPDMACH_TypeDef *)Channel_p(config->channelNum());
+  uint32_t ctrl = pChannel->DMACCControl;
+  ctrl &= ~((uint32_t)0xFFF);
+  ctrl |= CxControl_TransferSize(transferSize) | CxControl_I();
+  pChannel->DMACCControl = ctrl;
+  if (enable) {
+    pChannel->DMACCConfig |= _E;
+  }
+  return ctrl;
+}
+
 class MODDMA *moddma_p = (class MODDMA *)NULL;
 
 void MODDMA::Enable(CHANNELS ChannelNumber) {
