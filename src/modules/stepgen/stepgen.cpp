@@ -9,6 +9,8 @@ Stepgen::Stepgen(const uint8_t stepgen_number, Pin* step_pin, Pin* dir_pin, cons
       step_pin(step_pin->as_output()),
       dir_pin(dir_pin->as_output()) {
   this->dir_pin->set(this->current_dir);
+  // Initialize local accumulator from current feedback to preserve continuity
+  this->accumulator = this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number];
 }
 
 void Stepgen::make_steps() {
@@ -38,19 +40,15 @@ void Stepgen::make_steps() {
 
   if (this->increment == 0) return;
 
-  int64_t position = this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number];
-  const int64_t old_position = position;
-  position += increment;
+  const int64_t old_position = this->accumulator;
+  this->accumulator += this->increment;
 
-  if ((old_position ^ position) & FIXED_ONE) {
+  if ((old_position ^ this->accumulator) & FIXED_ONE) {
     // the next whole step value is reached, make a step
     this->step_pin->set(true);
     this->is_stepping = true;
   }
-  __disable_irq();
-  this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number] = position;
-  __DSB();
-  __enable_irq();
+  this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number] = this->accumulator;
 }
 
 void Stepgen::on_rx() {
