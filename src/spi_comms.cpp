@@ -163,8 +163,6 @@ inline void SpiComms::wait_for_command() {
     }
   }
   // payload transfer is TX-driven
-  spi_rx_irq(false);
-  spi_tx_irq(true);
   switch (cmd) {
     case PRU_READ: {
       data_ready = true;
@@ -174,9 +172,7 @@ inline void SpiComms::wait_for_command() {
       __DSB();
       current_cmd = PruCommand::Read;
       tx_ptr = reinterpret_cast<volatile const uint8_t*>(this->pru_back);
-      transfer_size = sizeof(pruState_t);
       bytes_transmitted = 0;
-      rx_ptr = nullptr;
       bytes_received = 0;
       EphoCRC32::init(crc);
       // Prefill immediately
@@ -188,8 +184,6 @@ inline void SpiComms::wait_for_command() {
       current_cmd = PruCommand::Write;
       rx_ptr = reinterpret_cast<volatile uint8_t*>(this->linuxcnc_back);
       bytes_received = 0;
-      tx_ptr = nullptr;
-      transfer_size = sizeof(linuxCncState_t);
       bytes_transmitted = 0;
       EphoCRC32::init(crc);
       receive_write_payload();
@@ -200,14 +194,16 @@ inline void SpiComms::wait_for_command() {
       if (reject_count > 5) spi_error = true;
       const size_t discard_size = (current_cmd == PruCommand::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
       current_cmd = PruCommand::Invalid;
-      rx_ptr = nullptr;
       bytes_received = 0;
-      tx_ptr = nullptr;
       transfer_size = discard_size;
       bytes_transmitted = 0;
       discard_payload();
     }
   }
+  // Common: enable TX-driven transfer after setup
+  spi_rx_irq(false);
+  spi_tx_irq(true);
+
 }
 
 void SpiComms::ssp0_irq() {
