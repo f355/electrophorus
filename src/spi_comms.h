@@ -3,7 +3,7 @@
 
 #include "MODDMA.h"
 #include "mbed.h"
-#include "spi_data.h"
+#include "spi_protocol.h"
 
 class SpiComms {
   MODDMA dma;

@@ -36,7 +36,7 @@
 #include "spi/rpi5_spi.c"
 
 // data structures for SPI rx/tx
-#include "../../include/spi_data.h"
+#include "../../src/spi_protocol.h"
 
 #define MODNAME "electrophorus"
 #define PREFIX "carvera"
