@@ -67,10 +67,10 @@ class SpiComms {
   }
 
   inline void preload_cmd_response() const;
-  void transmit_read_response();
-  void receive_write_payload();
-  void discard_payload();
-  void wait_for_command();
+  inline void transmit_read_response();
+  inline void receive_write_payload();
+  inline void discard_payload();
+  inline void wait_for_command();
 
   // Helper to consume one RX byte during WRITE (updates buffer and CRC)
   inline void try_read_payload_byte();

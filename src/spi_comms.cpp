@@ -62,7 +62,7 @@ inline void SpiComms::preload_cmd_response() const {
   for (size_t i = 0; i < 4; ++i) spi_write(reinterpret_cast<const uint8_t*>(&resp)[i]);
 }
 
-void SpiComms::transmit_read_response() {
+inline void SpiComms::transmit_read_response() {
   while (tx_remaining > 0 && spi_writeable()) {
     uint8_t out = 0;
     const size_t idx = sizeof(pruState_t) - tx_remaining;
@@ -111,7 +111,7 @@ inline void SpiComms::try_read_payload_byte() {
   rx_remaining--;
 }
 
-void SpiComms::receive_write_payload() {
+inline void SpiComms::receive_write_payload() {
   // Mirror transmit_read_response structure: TX-driven loop with opportunistic RX drain
   while (tx_remaining > 0 && spi_writeable()) {
     // For WRITE, we transmit zeros while host clocks data in
@@ -149,7 +149,7 @@ void SpiComms::receive_write_payload() {
   }
 }
 
-void SpiComms::discard_payload() {
+inline void SpiComms::discard_payload() {
   // TX zeros to satisfy clocks and drain RX
   while (tx_remaining > 0 && spi_writeable()) {
     spi_write(0);
@@ -167,7 +167,7 @@ void SpiComms::discard_payload() {
   }
 }
 
-void SpiComms::wait_for_command() {
+inline void SpiComms::wait_for_command() {
   // Drain 4 command bytes
   size_t cmd_idx = 0;
   uint32_t cmd;
