@@ -27,9 +27,11 @@ static constexpr auto TABLE = make();
 
 struct EphoCRC32 {
   static void init(uint32_t &crc) { crc = 0xFFFFFFFFu; }
-  static void update(uint32_t &crc, const uint8_t byte) {
+
+  [[gnu::always_inline]] static void update(uint32_t &crc, const uint8_t byte) {
     crc = epho_crc32_detail::TABLE[(crc ^ byte) & 0xFFu] ^ (crc >> 8);
   }
+
   static uint32_t finalize(const uint32_t crc) { return ~crc; }
 };
 

@@ -169,7 +169,7 @@ inline void SpiComms::wait_for_command() {
       const volatile auto tmp = this->pru_state;
       this->pru_state = this->pru_back;
       this->pru_back = tmp;
-      __DSB();
+
       current_cmd = PruCommand::Read;
       tx_ptr = reinterpret_cast<volatile const uint8_t*>(this->pru_back);
       bytes_transmitted = 0;

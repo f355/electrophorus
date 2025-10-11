@@ -29,7 +29,7 @@ class SpiComms {
   volatile const uint8_t* tx_ptr = nullptr;
 
   // Streaming CRC state
-  uint32_t crc = 0;               // running CRC (TX or RX); holds finalized CRC in TX tail
+  uint32_t crc = 0;  // running CRC (TX or RX); holds finalized CRC in TX tail
 
   uint8_t reject_count = 0;
   volatile bool data_ready = false;
@@ -42,10 +42,10 @@ class SpiComms {
   static constexpr PinName SPI_SSEL = P0_16;
   spi_t spi{};
 
-  [[nodiscard]] bool spi_readable() const { return spi.spi->SR & (1u << 2); }  // RNE
-  [[nodiscard]] uint8_t spi_read() const { return spi.spi->DR; }
-  [[nodiscard]] bool spi_writeable() const { return spi.spi->SR & (1u << 1); }  // TNF
-  void spi_write(const uint8_t value) const { spi.spi->DR = value; }
+  [[gnu::always_inline]] [[nodiscard]] bool spi_readable() const { return spi.spi->SR & (1u << 2); }  // RNE
+  [[gnu::always_inline]] [[nodiscard]] uint8_t spi_read() const { return spi.spi->DR; }
+  [[gnu::always_inline]] [[nodiscard]] bool spi_writeable() const { return spi.spi->SR & (1u << 1); }  // TNF
+  [[gnu::always_inline]] void spi_write(const uint8_t value) const { spi.spi->DR = value; }
 
   void spi_rx_irq(const bool enabled) const {
     constexpr uint32_t mask = (1u << 2) | (1u << 0);  // RXIM | RORIM
