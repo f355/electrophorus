@@ -15,8 +15,7 @@ class DigitalIns final : public Module {
  public:
   DigitalIns(uint8_t num_pins, const inputPin_t pins[], SpiComms* comms);
 
-  bool is_servo() override;
-  void run_servo() override;
+  void on_rx() override;
 };
 
 #endif

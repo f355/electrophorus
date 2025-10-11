@@ -39,14 +39,4 @@ class BaseTicker final : public IrqTicker {
   void register_modules(const std::vector<Module*>& ms) override;
 };
 
-class ServoTicker final : public IrqTicker {
-  static void irq_wrapper();
-
- public:
-  ServoTicker();
-  static ServoTicker* instance();
-  void tick() const override;
-  void register_modules(const std::vector<Module*>& ms) override;
-};
-
 #endif  // IRQ_TICKER_H

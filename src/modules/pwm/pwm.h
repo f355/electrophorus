@@ -17,7 +17,6 @@ class PWM final : public Module {
  public:
   PWM(uint8_t var_number, const Pin* pin, int period_us, SpiComms* comms);
 
-  bool listens_to_rx() override;
   void on_rx() override;
 };
 

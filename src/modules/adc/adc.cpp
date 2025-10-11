@@ -7,15 +7,13 @@ ADC::ADC(const uint8_t var_number, Pin* pin, SpiComms* comms)
       run_every(100),  // take a reading every 100 timer ticks (0.1 seconds)
       counter(1) {
   // Take a reading to get the ADC up and running before moving on
-  this->ADC::run_servo();
+  this->ADC::on_rx();
 }
 
-void ADC::run_servo() {
+void ADC::on_rx() {
   if (--this->counter == 0) {
     this->counter = run_every;
     this->value = this->adc->read_u16();
   }
   this->comms->get_pru_state()->input_vars[var_number] = this->value;
 }
-
-bool ADC::is_servo() { return true; }

@@ -49,22 +49,3 @@ void BaseTicker::register_modules(const std::vector<Module*>& ms) {
     if (m->is_base()) this->modules.push_back(m);
   }
 }
-
-ServoTicker::ServoTicker() : IrqTicker(LPC_TIM1, TIMER1_IRQn, 2, SERVO_FREQUENCY, SERVO_TICKER_PRIORITY, irq_wrapper) {}
-
-void ServoTicker::irq_wrapper() { instance()->handle_interrupt(); }
-
-ServoTicker* ServoTicker::instance() {
-  static ServoTicker instance;
-  return &instance;
-}
-
-void ServoTicker::tick() const {
-  for (const auto m : this->modules) m->run_servo();
-}
-
-void ServoTicker::register_modules(const std::vector<Module*>& ms) {
-  for (auto m : ms) {
-    if (m->is_servo()) this->modules.push_back(m);
-  }
-}

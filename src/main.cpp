@@ -42,12 +42,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   const auto base_ticker = BaseTicker::instance();
   base_ticker->register_modules(modules);
   base_ticker->start();
-
-  printf("initializing servo ticker...\n");
-  const auto servo_ticker = ServoTicker::instance();
-  servo_ticker->register_modules(modules);
-  servo_ticker->start();
-  printf("tickers initialized.\n");
+  printf("base ticker initialized.\n");
 
   printf("initializing receive listener...\n");
   RxListener::instance()->register_modules(modules);

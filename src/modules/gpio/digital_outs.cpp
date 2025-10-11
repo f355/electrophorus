@@ -35,5 +35,3 @@ void DigitalOuts::on_rx() {
     }
   }
 }
-
-bool DigitalOuts::listens_to_rx() { return true; }

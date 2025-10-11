@@ -21,7 +21,5 @@ void RxListener::handle_interrupt() {
 }
 
 void RxListener::register_modules(const std::vector<Module*>& ms) {
-  for (auto m : ms) {
-    if (m->listens_to_rx()) this->modules.push_back(m);
-  }
+  for (auto m : ms) this->modules.push_back(m);
 }

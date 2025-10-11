@@ -73,6 +73,4 @@ void Stepgen::on_rx() {
   }
 }
 
-bool Stepgen::listens_to_rx() { return true; }
-
 bool Stepgen::is_base() { return true; }

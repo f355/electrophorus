@@ -14,5 +14,3 @@ void PWM::on_rx() {
     this->pwm_pin->pulsewidth_us(this->period_us * this->duty_cycle / 1000);
   }
 }
-
-bool PWM::listens_to_rx() { return true; }

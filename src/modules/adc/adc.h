@@ -18,8 +18,7 @@ class ADC final : public Module {
  public:
   ADC(uint8_t var_number, Pin* pin, SpiComms* comms);
 
-  bool is_servo() override;
-  void run_servo() override;
+  void on_rx() override;
 };
 
 #endif

@@ -6,8 +6,6 @@ PulseCounter::PulseCounter(const uint8_t var_number, const Pin* pin, SpiComms* c
   (new InterruptIn(pin->to_pin_name()))->rise(callback(this, &PulseCounter::interrupt_handler));
 }
 
-void PulseCounter::run_servo() { this->comms->get_pru_state()->input_vars[this->var_number] = this->counter; }
+void PulseCounter::on_rx() { this->comms->get_pru_state()->input_vars[this->var_number] = this->counter; }
 
 void PulseCounter::interrupt_handler() { this->counter++; }
-
-bool PulseCounter::is_servo() { return true; }
