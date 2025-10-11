@@ -60,9 +60,11 @@ inline void SpiComms::transmit_read_response() {
       out = tx_ptr[idx];
       EphoCRC32::update(crc, out);
     } else {
-      const uint32_t c = EphoCRC32::finalize(crc);
-      const size_t k = idx - crc_pos;
-      out = static_cast<uint8_t>(c >> 8 * k & 0xFF);
+      if (idx == crc_pos) {
+        // finalize once when we reach the CRC field, store directly in the struct
+        const_cast<pruState_t*>(this->pru_back)->crc32 = EphoCRC32::finalize(crc);
+      }
+      out = tx_ptr[idx];
     }
     spi_write(out);
     tx_remaining--;
@@ -93,9 +95,6 @@ inline void SpiComms::try_read_payload_byte() {
   const auto b = spi_read();
   if (sizeof(linuxCncState_t) - rx_remaining < offsetof(linuxCncState_t, crc32)) {
     EphoCRC32::update(crc, b);
-  } else if (rx_crc_idx < 4) {
-    rx_crc |= static_cast<uint32_t>(b) << (8 * rx_crc_idx);
-    rx_crc_idx++;
   }
   *rx_ptr++ = b;
   rx_remaining--;
@@ -121,7 +120,7 @@ inline void SpiComms::receive_write_payload() {
 
     // Now the entire payload is received; verify and publish
     if (!this->e_stop_active) {
-      if (EphoCRC32::finalize(crc) == rx_crc) {
+      if (this->linuxcnc_back->crc32 == EphoCRC32::finalize(crc)) {
         reject_count = 0;
         const volatile auto tmp = this->linuxcnc_state;
         this->linuxcnc_state = this->linuxcnc_back;
@@ -195,8 +194,6 @@ inline void SpiComms::wait_for_command() {
       tx_ptr = nullptr;
       tx_remaining = sizeof(linuxCncState_t);
       EphoCRC32::init(crc);
-      rx_crc = 0;
-      rx_crc_idx = 0;
       receive_write_payload();
       break;
     }

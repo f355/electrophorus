@@ -28,9 +28,7 @@ class SpiComms {
   volatile const uint8_t* tx_ptr = nullptr;
 
   // Streaming CRC state
-  uint32_t crc = 0;
-  uint32_t rx_crc = 0;
-  uint8_t rx_crc_idx = 0;
+  uint32_t crc = 0;               // running CRC (TX or RX); holds finalized CRC in TX tail
 
   uint8_t reject_count = 0;
   volatile bool data_ready = false;
