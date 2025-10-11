@@ -65,6 +65,12 @@ class SpiComms {
     }
   }
 
+  // Consolidated IRQ mode setters (single IMSC write)
+  static constexpr uint32_t RX_IRQ_MASK = (1u << 2) | (1u << 0);  // RXIM | RORIM
+  static constexpr uint32_t TX_IRQ_MASK = (1u << 3);              // TXIM
+  [[gnu::always_inline]] void spi_set_rx_driven() const { spi.spi->IMSC = RX_IRQ_MASK; }
+  [[gnu::always_inline]] void spi_set_tx_driven() const { spi.spi->IMSC = TX_IRQ_MASK; }
+
   inline void preload_cmd_response() const;
   inline void transmit_read_response();
   inline void receive_write_payload();

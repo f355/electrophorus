@@ -35,8 +35,7 @@ SpiComms::SpiComms() {
   NVIC_EnableIRQ(SSP0_IRQn);
 
   spi.spi->ICR = 1u << 0 | 1u << 1;  // clear RORIC/RTIC
-  spi_rx_irq(true);
-  spi_tx_irq(false);
+  spi_set_rx_driven();
   preload_cmd_response();
 }
 
@@ -73,7 +72,7 @@ inline void SpiComms::transmit_read_response() {
 
   // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command response
   if (bytes_transmitted >= sizeof(pruState_t) && current_cmd == PruCommand::Read) {
-    spi_tx_irq(false);
+    spi_set_rx_driven();
     while (bytes_received < sizeof(pruState_t)) {
       if (spi_readable()) {
         (void)spi_read();
@@ -81,7 +80,6 @@ inline void SpiComms::transmit_read_response() {
       }
     }
     current_cmd = PruCommand::None;
-    spi_rx_irq(true);
     preload_cmd_response();
   }
 }
@@ -109,7 +107,7 @@ inline void SpiComms::receive_write_payload() {
 
   // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command response
   if (bytes_transmitted >= sizeof(linuxCncState_t) && current_cmd == PruCommand::Write) {
-    spi_tx_irq(false);
+    spi_set_rx_driven();
 
     // Drain any remaining RX bytes (tail) before validating CRC
     while (bytes_received < sizeof(linuxCncState_t)) try_read_payload_byte();
@@ -129,7 +127,6 @@ inline void SpiComms::receive_write_payload() {
     }
 
     current_cmd = PruCommand::None;
-    spi_rx_irq(true);
     preload_cmd_response();
   }
 }
@@ -147,8 +144,7 @@ inline void SpiComms::discard_payload() {
   if (bytes_received >= discard_size) {
     preload_cmd_response();
     current_cmd = PruCommand::None;
-    spi_tx_irq(false);
-    spi_rx_irq(true);
+    spi_set_rx_driven();
   }
 }
 
@@ -200,8 +196,7 @@ inline void SpiComms::wait_for_command() {
     }
   }
   // Common: enable TX-driven transfer after setup
-  spi_rx_irq(false);
-  spi_tx_irq(true);
+  spi_set_tx_driven();
 }
 
 void SpiComms::ssp0_irq() {
