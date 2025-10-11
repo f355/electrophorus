@@ -7,6 +7,7 @@
 
 #define PRU_READ 0x72656164   // "read" command
 #define PRU_WRITE 0x77726974  // "writ" command
+#define PRU_DATA 0x64617461   // "data" response
 
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)
@@ -14,7 +15,7 @@
 #pragma pack(push, 4)
 
 typedef struct {
-  volatile float stepgen_freq_command[STEPGENS];
+  float stepgen_freq_command[STEPGENS];
   int32_t output_vars[OUTPUT_VARS];
   uint8_t stepgen_enable_mask;
   uint16_t outputs;

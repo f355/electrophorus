@@ -376,7 +376,6 @@ static void stepgen_instance_position_control(stepper_state_t *s, const long l_p
 }
 
 void update_freq(void *arg, const long l_period_ns) {
-  busy_delay_ns(SPI_READ_GAP_NS);
   state_t *state = arg;
 
   // loop through generators
@@ -462,14 +461,19 @@ static uint32_t crc32_ieee(const uint8_t *data, const size_t len) {
 }
 
 void spi_read() {
-  uint32_t rx_dummy = 0;
-  const uint32_t cmd = PRU_READ;
-
   if (*(state->spi_enable)) {
     if ((*state->spi_reset && !state->spi_reset_old) || *state->spi_status) {
       // reset rising edge detected, try SPI transfer and reset OR PRU running
 
-      spi_xfer((uint8_t *)&rx_dummy, (const uint8_t *)&cmd, sizeof(cmd));
+      uint32_t cmd_response = 0;
+      const uint32_t cmd = PRU_READ;
+      spi_xfer((uint8_t *)&cmd_response, (const uint8_t *)&cmd, sizeof(cmd));
+      if (cmd_response != PRU_DATA) {
+        *state->spi_status = 0;
+        rtapi_print("Bad SPI header: 0x%08x\n", cmd_response);
+        return;
+      }
+
       busy_delay_ns(SPI_READ_GAP_NS);
       spi_xfer((uint8_t *)&rx_state, spi_read_dummy_tx, sizeof(pruState_t));
 
@@ -572,14 +576,20 @@ void spi_write() {
     // compute CRC for Linux->PRU payload (PRU_WRITE)
     tx_state.crc32 = crc32_ieee((const uint8_t *)&tx_state, (offsetof(linuxCncState_t, crc32)));
 
-    uint32_t rx_dummy = 0;
-    spi_xfer((uint8_t *)&rx_dummy, (const uint8_t *)&cmd, sizeof(cmd));
+    uint32_t cmd_response = 0;
+    spi_xfer((uint8_t *)&cmd_response, (const uint8_t *)&cmd, sizeof(cmd));
+    if (cmd_response != PRU_DATA) {
+      *state->spi_status = 0;
+      rtapi_print("Bad SPI header on WRITE: 0x%08x\n", cmd_response);
+      return;
+    }
 
     busy_delay_ns(SPI_WRITE_GAP_NS);
     spi_xfer((uint8_t *)&rx_state, (uint8_t *)&tx_state, (sizeof(linuxCncState_t)));
   }
 }
-static inline void spi_xfer(uint8_t *rx, const uint8_t *tx, const size_t len) {
+
+static void spi_xfer(uint8_t *rx, const uint8_t *tx, const size_t len) {
   switch (spi_driver) {
     case SPI_RPI4:
       rpi4_spi_xfer(rx, tx, len);

@@ -47,8 +47,7 @@ SpiComms::SpiComms() {
   spi.spi->ICR = 1u << 0 | 1u << 1;  // clear RORIC/RTIC
   spi_rx_irq(true);
   spi_tx_irq(false);
-  // Preload 4 zero response bytes for the command phase
-  for (size_t i = 0; i < 4; ++i) spi_write(0);
+  preload_cmd_response();
 }
 
 extern "C" void SSP0_IRQHandler(void) {
@@ -57,6 +56,11 @@ extern "C" void SSP0_IRQHandler(void) {
 
 linuxCncState_t volatile* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
 pruState_t volatile* SpiComms::get_pru_state() const { return this->pru_state; }
+
+void SpiComms::preload_cmd_response() const {
+  constexpr uint32_t resp = PRU_DATA;
+  for (size_t i = 0; i < 4; ++i) spi_write(reinterpret_cast<const uint8_t*>(&resp)[i]);
+}
 
 void SpiComms::transmit_read_response() {
   while (tx_remaining > 0 && spi_writeable()) {
@@ -90,8 +94,7 @@ void SpiComms::transmit_read_response() {
     }
     current_cmd = PruCommand::None;
     spi_rx_irq(true);
-    // Preload next command response (4 zeros)
-    for (size_t i = 0; i < 4; ++i) spi_write(0);
+    preload_cmd_response();
   }
 }
 
@@ -142,7 +145,7 @@ void SpiComms::receive_write_payload() {
 
     current_cmd = PruCommand::None;
     spi_rx_irq(true);
-    for (size_t i = 0; i < 4; ++i) spi_write(0);
+    preload_cmd_response();
   }
 }
 
@@ -157,8 +160,7 @@ void SpiComms::discard_payload() {
     rx_remaining--;
   }
   if (rx_remaining == 0) {
-    // Preload next command zeros and return to idle
-    for (size_t i = 0; i < 4; ++i) spi_write(0);
+    preload_cmd_response();
     current_cmd = PruCommand::None;
     spi_tx_irq(false);
     spi_rx_irq(true);
