@@ -4,6 +4,6 @@
 
 #include "pin.h"
 
-bool Module::is_base() { return false; }
-void Module::run_base() {}
+bool Module::is_stepgen() { return false; }
+void Module::make_steps() {}
 void Module::on_rx() {}

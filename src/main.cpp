@@ -18,11 +18,11 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-#include "irq_ticker.h"
 #include "machine_config.h"
 #include "mbed.h"
 #include "rx_listener.h"
 #include "spi_comms.h"
+#include "stepgen_ticker.h"
 
 [[noreturn]] int main() {
   printf("\nelectrophorus booting up...\n");
@@ -39,9 +39,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   // there, the "base" thread is doing hard-realtime stuff like pulsing the steppers,
   // and the "servo" thread is handling less-urgent tasks (motion planning, pin IO handling, etc.) at a lower frequency.
   printf("initializing base ticker...\n");
-  const auto base_ticker = BaseTicker::instance();
-  base_ticker->register_modules(modules);
-  base_ticker->start();
+  const auto stepgen_ticker = StepgenTicker::instance();
+  stepgen_ticker->register_modules(modules);
+  stepgen_ticker->start();
   printf("base ticker initialized.\n");
 
   printf("initializing receive listener...\n");

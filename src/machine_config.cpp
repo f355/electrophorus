@@ -1,6 +1,5 @@
 #include "machine_config.h"
 
-#include "irq_ticker.h"
 #include "module.h"
 #include "modules/adc/adc.h"
 #include "modules/e_stop/e_stop.h"
@@ -9,6 +8,7 @@
 #include "modules/gpio/pulse_counter.h"
 #include "modules/pwm/pwm.h"
 #include "modules/stepgen/stepgen.h"
+#include "stepgen_ticker.h"
 
 // Carvera Air CA1 configuration
 
