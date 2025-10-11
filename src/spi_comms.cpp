@@ -136,15 +136,15 @@ inline void SpiComms::receive_write_payload() {
 
 inline void SpiComms::discard_payload() {
   // TX zeros to satisfy clocks and drain RX
-  while (spi_writeable() && bytes_transmitted < transfer_size) {
+  while (spi_writeable() && bytes_transmitted < discard_size) {
     spi_write(0);
     bytes_transmitted++;
   }
-  while (spi_readable() && bytes_received < transfer_size) {
+  while (spi_readable() && bytes_received < discard_size) {
     (void)spi_read();
     bytes_received++;
   }
-  if (bytes_received >= transfer_size) {
+  if (bytes_received >= discard_size) {
     preload_cmd_response();
     current_cmd = PruCommand::None;
     spi_tx_irq(false);
@@ -171,7 +171,7 @@ inline void SpiComms::wait_for_command() {
       this->pru_back = tmp;
 
       current_cmd = PruCommand::Read;
-      tx_ptr = reinterpret_cast<volatile const uint8_t*>(this->pru_back);
+      tx_ptr = reinterpret_cast<const uint8_t*>(const_cast<const pruState_t*>(this->pru_back));
       bytes_transmitted = 0;
       bytes_received = 0;
       EphoCRC32::init(crc);
@@ -182,7 +182,7 @@ inline void SpiComms::wait_for_command() {
     case PRU_WRITE: {
       data_ready = true;
       current_cmd = PruCommand::Write;
-      rx_ptr = reinterpret_cast<volatile uint8_t*>(this->linuxcnc_back);
+      rx_ptr = reinterpret_cast<uint8_t*>(const_cast<linuxCncState_t*>(this->linuxcnc_back));
       bytes_received = 0;
       bytes_transmitted = 0;
       EphoCRC32::init(crc);
@@ -192,10 +192,9 @@ inline void SpiComms::wait_for_command() {
     default: {
       reject_count++;
       if (reject_count > 5) spi_error = true;
-      const size_t discard_size = (current_cmd == PruCommand::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
+      discard_size = (current_cmd == PruCommand::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
       current_cmd = PruCommand::Invalid;
       bytes_received = 0;
-      transfer_size = discard_size;
       bytes_transmitted = 0;
       discard_payload();
     }
@@ -203,7 +202,6 @@ inline void SpiComms::wait_for_command() {
   // Common: enable TX-driven transfer after setup
   spi_rx_irq(false);
   spi_tx_irq(true);
-
 }
 
 void SpiComms::ssp0_irq() {

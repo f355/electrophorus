@@ -6,10 +6,10 @@
 
 class SpiComms {
   // Double buffers
-  linuxCncState_t volatile linuxcnc_state1{};
-  linuxCncState_t volatile linuxcnc_state2{};
-  pruState_t volatile pru_state1{};
-  pruState_t volatile pru_state2{};
+  linuxCncState_t linuxcnc_state1{};
+  linuxCncState_t linuxcnc_state2{};
+  pruState_t pru_state1{};
+  pruState_t pru_state2{};
 
   // Published pointers and back buffers
   volatile linuxCncState_t* linuxcnc_back = nullptr;
@@ -22,11 +22,12 @@ class SpiComms {
   uint32_t cmd_word = 0;
 
   // Payload bookkeeping
-  volatile size_t bytes_received = 0;
-  volatile size_t transfer_size = 0;      // total TX bytes for current transfer
-  volatile size_t bytes_transmitted = 0;  // number of TX bytes sent so far
-  volatile uint8_t* rx_ptr = nullptr;
-  volatile const uint8_t* tx_ptr = nullptr;
+  size_t bytes_received = 0;
+  size_t bytes_transmitted = 0;
+  uint8_t* rx_ptr = nullptr;
+  const uint8_t* tx_ptr = nullptr;
+
+  size_t discard_size = 0;  // bytes to discard on bad command; can be the size of either struct
 
   // Streaming CRC state
   uint32_t crc = 0;  // running CRC (TX or RX); holds finalized CRC in TX tail
