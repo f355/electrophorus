@@ -1,5 +1,5 @@
 /*
- RP1 SPI driver for Raspberry Pi 5 (SPI0, CS0, mode 1, 8-bit)
+ RP1 SPI driver for Raspberry Pi 5 (SPI0, CS0, mode 0, 8-bit)
 
  This file is part of Electrophorus.
 
@@ -109,7 +109,7 @@ static void setup_spi0_pins(void) {
   }
 }
 
-// Configure SPI0 for mode 1, 8-bit, TR, CS0 idle high (inactive), set baud divider
+// Configure SPI0 for mode 0, 8-bit, TR, CS0 idle high (inactive), set baud divider
 static void setup_spi0_ctrl(int frequency_hz) {
   rpi5_wr32(rpi5_spi_base, DW_SPI_SSIENR, 0);
   const uint32_t imr = rpi5_rd32(rpi5_spi_base, DW_SPI_IMR);
@@ -122,7 +122,6 @@ static void setup_spi0_ctrl(int frequency_hz) {
 
   uint32_t cr0 = 0;
   cr0 |= (7u << 0);  // DFS=8
-  cr0 |= (1u << 6);  // CPHA
   rpi5_wr32(rpi5_spi_base, DW_SPI_CTRLR0, cr0);
 
   if (frequency_hz <= 0 || frequency_hz > (int)RP1_SPI_REF_CLK_HZ) frequency_hz = 5000000;

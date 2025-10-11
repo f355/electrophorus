@@ -31,7 +31,7 @@ SpiComms::SpiComms() {
   this->pru_back = &this->pru_state2;
 
   spi_init(&spi, SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
-  spi_format(&spi, 8, 1, 1);      // 8-bit transfers, mode 1, slave
+  spi_format(&spi, 8, 0, 1);      // 8-bit transfers, mode 0, slave
   spi_frequency(&spi, 10000000);  // this is needed for some reason even in the slave mode
 
   // Debug pin init

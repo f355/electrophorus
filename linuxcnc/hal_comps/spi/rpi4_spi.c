@@ -1,5 +1,5 @@
 /*
- BCM2711 (Raspberry Pi 4) SPI0 + GPIO minimal access for SPI0 CS0, mode 1, 8-bit
+ BCM2711 (Raspberry Pi 4) SPI0 + GPIO minimal access for SPI0 CS0, mode 0, 8-bit
 
  This file is part of Electrophorus.
 
@@ -97,10 +97,10 @@ static void gpio_set_alt0_spi0(void) {
   rpi4_wr32(rpi4_gpio_base, GPFSEL1, v1);
 }
 
-static void spi0_setup_mode1_8bit(int frequency_hz) {
-  /* Clear FIFOs, set mode1 (CPHA=1, CPOL=0), CS=0 */
+static void spi0_setup_mode0_8bit(int frequency_hz) {
+  /* Clear FIFOs, set mode0 (CPHA=0, CPOL=0), CS=0 */
   uint32_t cs = 0;
-  cs |= SPI0_CS_CPHA; /* mode 1 */
+  cs &= ~SPI0_CS_CPHA; /* mode 0 */
   cs &= ~SPI0_CS_CPOL;
   cs &= ~SPI0_CS_CS_MASK; /* CS0 */
   cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
@@ -133,7 +133,7 @@ int rpi4_spi_init(int frequency_hz) {
   rpi4_spi0_base = rpi4_bcm_bar + SPI0_OFFSET;
 
   gpio_set_alt0_spi0();
-  spi0_setup_mode1_8bit(frequency_hz);
+  spi0_setup_mode0_8bit(frequency_hz);
   return 1;
 }
 
