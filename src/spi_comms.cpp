@@ -53,22 +53,22 @@ inline void SpiComms::preload_cmd_response() const {
 }
 
 inline void SpiComms::transmit_read_response() {
+  // Burst TX first
   while (spi_writeable() && bytes_transmitted < sizeof(pruState_t)) {
     if (constexpr size_t crc_pos = offsetof(pruState_t, crc32); bytes_transmitted < crc_pos) {
       EphoCRC32::update(crc, tx_ptr[bytes_transmitted]);
-    } else {
-      if (bytes_transmitted == crc_pos) {
-        // finalize once when we reach the CRC field, store directly in the struct
-        const_cast<pruState_t*>(this->pru_back)->crc32 = EphoCRC32::finalize(crc);
-      }
+    } else if (bytes_transmitted == crc_pos) {
+      // finalize once when we reach the CRC field, store directly in the struct
+      const_cast<pruState_t*>(this->pru_back)->crc32 = EphoCRC32::finalize(crc);
     }
     spi_write(tx_ptr[bytes_transmitted]);
     bytes_transmitted++;
+  }
 
-    if (spi_readable() && bytes_received < sizeof(pruState_t)) {
-      (void)spi_read();
-      bytes_received++;
-    }
+  // Then burst RX drain
+  while (spi_readable() && bytes_received < sizeof(pruState_t)) {
+    (void)spi_read();
+    bytes_received++;
   }
 
   // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command response
