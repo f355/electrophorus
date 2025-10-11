@@ -8,7 +8,9 @@
 class ADC final : public Module {
   SpiComms* comms;
   uint8_t var_number;
+
   AnalogIn* adc;
+  uint16_t value;
 
   uint32_t run_every;
   uint32_t counter;
