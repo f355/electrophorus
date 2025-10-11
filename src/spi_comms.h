@@ -22,8 +22,9 @@ class SpiComms {
   uint32_t cmd_word = 0;
 
   // Payload bookkeeping
-  volatile size_t rx_remaining = 0;
-  volatile size_t tx_remaining = 0;
+  volatile size_t bytes_received = 0;
+  volatile size_t transfer_size = 0;      // total TX bytes for current transfer
+  volatile size_t bytes_transmitted = 0;  // number of TX bytes sent so far
   volatile uint8_t* rx_ptr = nullptr;
   volatile const uint8_t* tx_ptr = nullptr;
 

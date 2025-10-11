@@ -53,35 +53,31 @@ inline void SpiComms::preload_cmd_response() const {
 }
 
 inline void SpiComms::transmit_read_response() {
-  while (tx_remaining > 0 && spi_writeable()) {
-    uint8_t out = 0;
-    const size_t idx = sizeof(pruState_t) - tx_remaining;
-    if (constexpr size_t crc_pos = offsetof(pruState_t, crc32); idx < crc_pos) {
-      out = tx_ptr[idx];
-      EphoCRC32::update(crc, out);
+  while (spi_writeable() && bytes_transmitted < sizeof(pruState_t)) {
+    if (constexpr size_t crc_pos = offsetof(pruState_t, crc32); bytes_transmitted < crc_pos) {
+      EphoCRC32::update(crc, tx_ptr[bytes_transmitted]);
     } else {
-      if (idx == crc_pos) {
+      if (bytes_transmitted == crc_pos) {
         // finalize once when we reach the CRC field, store directly in the struct
         const_cast<pruState_t*>(this->pru_back)->crc32 = EphoCRC32::finalize(crc);
       }
-      out = tx_ptr[idx];
     }
-    spi_write(out);
-    tx_remaining--;
+    spi_write(tx_ptr[bytes_transmitted]);
+    bytes_transmitted++;
 
-    if (rx_remaining > 0 && spi_readable()) {
+    if (spi_readable() && bytes_received < sizeof(pruState_t)) {
       (void)spi_read();
-      rx_remaining--;
+      bytes_received++;
     }
   }
 
-  // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command zeros
-  if (tx_remaining == 0 && current_cmd == PruCommand::Read) {
+  // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command response
+  if (bytes_transmitted >= sizeof(pruState_t) && current_cmd == PruCommand::Read) {
     spi_tx_irq(false);
-    while (rx_remaining > 0) {
+    while (bytes_received < sizeof(pruState_t)) {
       if (spi_readable()) {
         (void)spi_read();
-        rx_remaining--;
+        bytes_received++;
       }
     }
     current_cmd = PruCommand::None;
@@ -93,30 +89,30 @@ inline void SpiComms::transmit_read_response() {
 inline void SpiComms::try_read_payload_byte() {
   if (!spi_readable()) return;
   const auto b = spi_read();
-  if (sizeof(linuxCncState_t) - rx_remaining < offsetof(linuxCncState_t, crc32)) {
+  if (bytes_received < offsetof(linuxCncState_t, crc32)) {
     EphoCRC32::update(crc, b);
   }
   *rx_ptr++ = b;
-  rx_remaining--;
+  bytes_received++;
 }
 
 inline void SpiComms::receive_write_payload() {
   // Mirror transmit_read_response structure: TX-driven loop with opportunistic RX drain
-  while (tx_remaining > 0 && spi_writeable()) {
+  while (spi_writeable() && bytes_transmitted < sizeof(linuxCncState_t)) {
     // For WRITE, we transmit zeros while host clocks data in
     spi_write(0);
-    tx_remaining--;
+    bytes_transmitted++;
 
     // Drain one RX byte if available
-    if (rx_remaining > 0) try_read_payload_byte();
+    if (bytes_received < sizeof(linuxCncState_t)) try_read_payload_byte();
   }
 
-  // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command zeros
-  if (tx_remaining == 0 && current_cmd == PruCommand::Write) {
+  // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command response
+  if (bytes_transmitted >= sizeof(linuxCncState_t) && current_cmd == PruCommand::Write) {
     spi_tx_irq(false);
 
     // Drain any remaining RX bytes (tail) before validating CRC
-    while (rx_remaining > 0) try_read_payload_byte();
+    while (bytes_received < sizeof(linuxCncState_t)) try_read_payload_byte();
 
     // Now the entire payload is received; verify and publish
     if (!this->e_stop_active) {
@@ -140,15 +136,15 @@ inline void SpiComms::receive_write_payload() {
 
 inline void SpiComms::discard_payload() {
   // TX zeros to satisfy clocks and drain RX
-  while (tx_remaining > 0 && spi_writeable()) {
+  while (spi_writeable() && bytes_transmitted < transfer_size) {
     spi_write(0);
-    tx_remaining--;
+    bytes_transmitted++;
   }
-  while (rx_remaining > 0 && spi_readable()) {
+  while (spi_readable() && bytes_received < transfer_size) {
     (void)spi_read();
-    rx_remaining--;
+    bytes_received++;
   }
-  if (rx_remaining == 0) {
+  if (bytes_received >= transfer_size) {
     preload_cmd_response();
     current_cmd = PruCommand::None;
     spi_tx_irq(false);
@@ -178,9 +174,10 @@ inline void SpiComms::wait_for_command() {
       __DSB();
       current_cmd = PruCommand::Read;
       tx_ptr = reinterpret_cast<volatile const uint8_t*>(this->pru_back);
-      tx_remaining = sizeof(pruState_t);
+      transfer_size = sizeof(pruState_t);
+      bytes_transmitted = 0;
       rx_ptr = nullptr;
-      rx_remaining = sizeof(pruState_t);
+      bytes_received = 0;
       EphoCRC32::init(crc);
       // Prefill immediately
       transmit_read_response();
@@ -190,9 +187,10 @@ inline void SpiComms::wait_for_command() {
       data_ready = true;
       current_cmd = PruCommand::Write;
       rx_ptr = reinterpret_cast<volatile uint8_t*>(this->linuxcnc_back);
-      rx_remaining = sizeof(linuxCncState_t);
+      bytes_received = 0;
       tx_ptr = nullptr;
-      tx_remaining = sizeof(linuxCncState_t);
+      transfer_size = sizeof(linuxCncState_t);
+      bytes_transmitted = 0;
       EphoCRC32::init(crc);
       receive_write_payload();
       break;
@@ -203,9 +201,10 @@ inline void SpiComms::wait_for_command() {
       const size_t discard_size = (current_cmd == PruCommand::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
       current_cmd = PruCommand::Invalid;
       rx_ptr = nullptr;
-      rx_remaining = discard_size;
+      bytes_received = 0;
       tx_ptr = nullptr;
-      tx_remaining = discard_size;
+      transfer_size = discard_size;
+      bytes_transmitted = 0;
       discard_payload();
     }
   }
