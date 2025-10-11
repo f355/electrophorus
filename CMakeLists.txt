@@ -41,7 +41,7 @@ add_executable(${PROJECT_NAME}
         src/stepgen_ticker.cpp
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC . src include)
+target_include_directories(${PROJECT_NAME} PUBLIC . src)
 
 target_link_libraries(${PROJECT_NAME} mbed-baremetal)
 

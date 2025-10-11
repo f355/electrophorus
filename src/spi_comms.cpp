@@ -10,16 +10,7 @@ static Pin dbg_pin(0, 8);
 
 enum State { ST_IDLE = 0, ST_RUNNING, ST_RESET };
 
-// Streaming CRC32 (IEEE 802.3, reflected)
-static void crc32_init(uint32_t& crc) { crc = 0xFFFFFFFFu; }
-static void crc32_update(uint32_t& crc, const uint8_t byte) {
-  crc ^= byte;
-  for (int k = 0; k < 8; ++k) {
-    const uint32_t mask = -(crc & 1u);
-    crc = (crc >> 1) ^ (0xEDB88320u & mask);
-  }
-}
-static uint32_t crc32_final(const uint32_t crc) { return ~crc; }
+#include "epho_crc32.h"
 
 SpiComms* SpiComms::s_instance = nullptr;
 
@@ -31,8 +22,8 @@ SpiComms::SpiComms() {
   this->pru_back = &this->pru_state2;
 
   spi_init(&spi, SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
-  spi_format(&spi, 8, 0, 1);      // 8-bit transfers, mode 0, slave
-  spi_frequency(&spi, 10000000);  // this is needed for some reason even in the slave mode
+  spi_format(&spi, 8, 0, 1);      // 8-bit transfers, mode 0, on the receiving end
+  spi_frequency(&spi, 10000000);  // this is still needed for some reason
 
   // Debug pin init
   dbg_pin.as_output();
@@ -43,7 +34,6 @@ SpiComms::SpiComms() {
   NVIC_SetPriority(SSP0_IRQn, SSP_IRQ_PRIORITY);
   NVIC_EnableIRQ(SSP0_IRQn);
 
-  // Enable RX-related interrupts on SSP0 (ROR, RT, RX). TXIM not needed in slave mode.
   spi.spi->ICR = 1u << 0 | 1u << 1;  // clear RORIC/RTIC
   spi_rx_irq(true);
   spi_tx_irq(false);
@@ -68,9 +58,9 @@ inline void SpiComms::transmit_read_response() {
     const size_t idx = sizeof(pruState_t) - tx_remaining;
     if (constexpr size_t crc_pos = offsetof(pruState_t, crc32); idx < crc_pos) {
       out = tx_ptr[idx];
-      crc32_update(tx_crc, out);
+      EphoCRC32::update(crc, out);
     } else {
-      const uint32_t c = crc32_final(tx_crc);
+      const uint32_t c = EphoCRC32::finalize(crc);
       const size_t k = idx - crc_pos;
       out = static_cast<uint8_t>(c >> 8 * k & 0xFF);
     }
@@ -102,10 +92,10 @@ inline void SpiComms::try_read_payload_byte() {
   if (!spi_readable()) return;
   const auto b = spi_read();
   if (sizeof(linuxCncState_t) - rx_remaining < offsetof(linuxCncState_t, crc32)) {
-    crc32_update(rx_crc, b);
-  } else if (rx_crc_recv_idx < 4) {
-    rx_crc_recv |= static_cast<uint32_t>(b) << (8 * rx_crc_recv_idx);
-    rx_crc_recv_idx++;
+    EphoCRC32::update(crc, b);
+  } else if (rx_crc_idx < 4) {
+    rx_crc |= static_cast<uint32_t>(b) << (8 * rx_crc_idx);
+    rx_crc_idx++;
   }
   *rx_ptr++ = b;
   rx_remaining--;
@@ -131,7 +121,7 @@ inline void SpiComms::receive_write_payload() {
 
     // Now the entire payload is received; verify and publish
     if (!this->e_stop_active) {
-      if (crc32_final(rx_crc) == rx_crc_recv) {
+      if (EphoCRC32::finalize(crc) == rx_crc) {
         reject_count = 0;
         const volatile auto tmp = this->linuxcnc_state;
         this->linuxcnc_state = this->linuxcnc_back;
@@ -192,7 +182,7 @@ inline void SpiComms::wait_for_command() {
       tx_remaining = sizeof(pruState_t);
       rx_ptr = nullptr;
       rx_remaining = sizeof(pruState_t);
-      crc32_init(tx_crc);
+      EphoCRC32::init(crc);
       // Prefill immediately
       transmit_read_response();
       break;
@@ -204,9 +194,9 @@ inline void SpiComms::wait_for_command() {
       rx_remaining = sizeof(linuxCncState_t);
       tx_ptr = nullptr;
       tx_remaining = sizeof(linuxCncState_t);
-      crc32_init(rx_crc);
-      rx_crc_recv = 0;
-      rx_crc_recv_idx = 0;
+      EphoCRC32::init(crc);
+      rx_crc = 0;
+      rx_crc_idx = 0;
       receive_write_payload();
       break;
     }
@@ -225,19 +215,6 @@ inline void SpiComms::wait_for_command() {
 }
 
 void SpiComms::ssp0_irq() {
-  dbg_pin.set(false);
-  // Clear and handle error/status first
-  const uint32_t mis = spi.spi->MIS;
-  if (mis & (1u << 0)) {       // RORMIS
-    spi.spi->ICR = (1u << 0);  // RORIC
-  }
-  if (mis & (1u << 1)) {       // RTMIS
-    spi.spi->ICR = (1u << 1);  // RTIC
-    // on RTIM, drain the RX FIFO - something must have gone wrong
-    // no way to reset TX FIFO, bytes written to it will be discarded when linuxcnc reads the next header
-    while (spi_readable()) (void)spi_read();
-  }
-
   // Mode-driven service
   switch (current_cmd) {
     case PruCommand::Read:
@@ -254,8 +231,6 @@ void SpiComms::ssp0_irq() {
       break;
     }
   }
-
-  dbg_pin.set(true);
 }
 
 void SpiComms::data_ready_callback() {

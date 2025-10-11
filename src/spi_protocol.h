@@ -1,8 +1,6 @@
 #ifndef SPIDATA_H
 #define SPIDATA_H
 
-#include <stddef.h>
-
 #include "machine_definitions.h"
 
 #define PRU_READ 0x72656164   // "read" command

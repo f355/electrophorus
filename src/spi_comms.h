@@ -2,7 +2,7 @@
 #define COMMS_H
 
 #include "mbed.h"
-#include "spi_data.h"
+#include "spi_protocol.h"
 
 class SpiComms {
   // Double buffers
@@ -28,10 +28,9 @@ class SpiComms {
   volatile const uint8_t* tx_ptr = nullptr;
 
   // Streaming CRC state
+  uint32_t crc = 0;
   uint32_t rx_crc = 0;
-  uint32_t tx_crc = 0;
-  uint32_t rx_crc_recv = 0;
-  uint8_t rx_crc_recv_idx = 0;
+  uint8_t rx_crc_idx = 0;
 
   uint8_t reject_count = 0;
   volatile bool data_ready = false;
