@@ -141,6 +141,31 @@ download it, rename it to `firmware.bin` and put it on the SD card.
 
 Coming soon, carefuling is in progress.
 
+## SPI protocol
+
+```mermaid
+sequenceDiagram
+    loop Every LinuxCNC servo tick
+        LinuxCNC->>+PRU: PRU_READ (4 bytes)
+        PRU-->>-LinuxCNC: (4 zero bytes)
+        Note over PRU: swap pru_state buffers
+        Note over LinuxCNC: small delay
+        LinuxCNC->>+PRU: 0x00 x sizeof(pruState_t)
+        PRU-->>-LinuxCNC: pruState_t pru_back#59; (last 4 bytes is CRC32)
+
+        Note over LinuxCNC: validate CRC32<br> do motion planning etc.
+
+        LinuxCNC->>+PRU: PRU_WRITE (4 bytes)
+        PRU-->>-LinuxCNC: (4 zero bytes)
+        Note over LinuxCNC: small delay
+        LinuxCNC->>+PRU: linuxCncState_t linuxcnc_back#59; (last 4 bytes is CRC32)
+        PRU-->>-LinuxCNC: 0x00 x sizeof(linuxCncState_t)
+        Note over PRU: validate CRC32<br> swap linuxcnc_state buffers
+
+        Note over LinuxCNC: wait for the next tick
+    end
+```
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later), except where a file

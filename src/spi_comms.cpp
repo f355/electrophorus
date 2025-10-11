@@ -3,7 +3,7 @@
 #include "LPC17xx.h"
 #include "machine_definitions.h"
 
-#define MAX_SPI_DELAY 250
+#define MAX_SPI_DELAY 5
 
 #include "pin.h"
 static Pin dbg_pin(0, 8);
@@ -55,6 +55,9 @@ extern "C" void SSP0_IRQHandler(void) {
   if (SpiComms::s_instance) SpiComms::s_instance->ssp0_irq();
 }
 
+linuxCncState_t volatile* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
+pruState_t volatile* SpiComms::get_pru_state() const { return this->pru_state; }
+
 void SpiComms::transmit_read_response() {
   while (tx_remaining > 0 && spi_writeable()) {
     uint8_t out = 0;
@@ -92,7 +95,7 @@ void SpiComms::transmit_read_response() {
   }
 }
 
-inline void SpiComms::try_read_rx_byte() {
+inline void SpiComms::try_read_payload_byte() {
   if (!spi_readable()) return;
   const auto b = spi_read();
   if (sizeof(linuxCncState_t) - rx_remaining < offsetof(linuxCncState_t, crc32)) {
@@ -105,7 +108,7 @@ inline void SpiComms::try_read_rx_byte() {
   rx_remaining--;
 }
 
-void SpiComms::receive_write() {
+void SpiComms::receive_write_payload() {
   // Mirror transmit_read_response structure: TX-driven loop with opportunistic RX drain
   while (tx_remaining > 0 && spi_writeable()) {
     // For WRITE, we transmit zeros while host clocks data in
@@ -113,7 +116,7 @@ void SpiComms::receive_write() {
     tx_remaining--;
 
     // Drain one RX byte if available
-    if (rx_remaining > 0) try_read_rx_byte();
+    if (rx_remaining > 0) try_read_payload_byte();
   }
 
   // If TX finished, disable TXIM, drain remaining RX bytes immediately, and preload next command zeros
@@ -121,7 +124,7 @@ void SpiComms::receive_write() {
     spi_tx_irq(false);
 
     // Drain any remaining RX bytes (tail) before validating CRC
-    while (rx_remaining > 0) try_read_rx_byte();
+    while (rx_remaining > 0) try_read_payload_byte();
 
     // Now the entire payload is received; verify and publish
     if (!this->e_stop_active) {
@@ -137,14 +140,13 @@ void SpiComms::receive_write() {
       }
     }
 
-    // Enter idle: restore masks and preload next command zeros
     current_cmd = PruCommand::None;
     spi_rx_irq(true);
     for (size_t i = 0; i < 4; ++i) spi_write(0);
   }
 }
 
-void SpiComms::service_discard() {
+void SpiComms::discard_payload() {
   // TX zeros to satisfy clocks and drain RX
   while (tx_remaining > 0 && spi_writeable()) {
     spi_write(0);
@@ -160,6 +162,63 @@ void SpiComms::service_discard() {
     current_cmd = PruCommand::None;
     spi_tx_irq(false);
     spi_rx_irq(true);
+  }
+}
+
+void SpiComms::wait_for_command() {
+  // Drain 4 command bytes
+  size_t cmd_idx = 0;
+  uint32_t cmd;
+  if (!spi_readable()) return;  // don't block the ISR - RXIM will fire again when the command arrives
+  while (cmd_idx < 4) {
+    if (spi_readable()) {
+      reinterpret_cast<uint8_t*>(&cmd)[cmd_idx++] = spi_read();
+    }
+  }
+  // payload transfer is TX-driven
+  spi_rx_irq(false);
+  spi_tx_irq(true);
+  switch (cmd) {
+    case PRU_READ: {
+      data_ready = true;
+      const volatile auto tmp = this->pru_state;
+      this->pru_state = this->pru_back;
+      this->pru_back = tmp;
+      __DSB();
+      current_cmd = PruCommand::Read;
+      tx_ptr = reinterpret_cast<volatile const uint8_t*>(this->pru_back);
+      tx_remaining = sizeof(pruState_t);
+      rx_ptr = nullptr;
+      rx_remaining = sizeof(pruState_t);
+      crc32_init(tx_crc);
+      // Prefill immediately
+      transmit_read_response();
+      break;
+    }
+    case PRU_WRITE: {
+      data_ready = true;
+      current_cmd = PruCommand::Write;
+      rx_ptr = reinterpret_cast<volatile uint8_t*>(this->linuxcnc_back);
+      rx_remaining = sizeof(linuxCncState_t);
+      tx_ptr = nullptr;
+      tx_remaining = sizeof(linuxCncState_t);
+      crc32_init(rx_crc);
+      rx_crc_recv = 0;
+      rx_crc_recv_idx = 0;
+      receive_write_payload();
+      break;
+    }
+    default: {
+      reject_count++;
+      if (reject_count > 5) spi_error = true;
+      const size_t discard_size = (current_cmd == PruCommand::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
+      current_cmd = PruCommand::Invalid;
+      rx_ptr = nullptr;
+      rx_remaining = discard_size;
+      tx_ptr = nullptr;
+      tx_remaining = discard_size;
+      discard_payload();
+    }
   }
 }
 
@@ -183,66 +242,13 @@ void SpiComms::ssp0_irq() {
       transmit_read_response();
       break;
     case PruCommand::Write:
-      receive_write();
+      receive_write_payload();
       break;
     case PruCommand::Invalid:
-      service_discard();
+      discard_payload();
       break;
     case PruCommand::None: {
-      // Drain 4 command bytes
-      size_t cmd_idx = 0;
-      uint32_t cmd;
-      if (!spi_readable()) break;  // don't block the ISR - RXIM will fire again when the command arrives
-      while (cmd_idx < 4) {
-        if (spi_readable()) {
-          reinterpret_cast<uint8_t*>(&cmd)[cmd_idx++] = spi_read();
-        }
-      }
-      // payload transfer is TX-driven
-      spi_rx_irq(false);
-      spi_tx_irq(true);
-      switch (cmd) {
-        case PRU_READ: {
-          data_ready = true;
-          const volatile auto tmp = this->pru_state;
-          this->pru_state = this->pru_back;
-          this->pru_back = tmp;
-          __DSB();
-          current_cmd = PruCommand::Read;
-          tx_ptr = reinterpret_cast<volatile const uint8_t*>(this->pru_back);
-          tx_remaining = sizeof(pruState_t);
-          rx_ptr = nullptr;
-          rx_remaining = sizeof(pruState_t);
-          crc32_init(tx_crc);
-          // Prefill immediately
-          transmit_read_response();
-          break;
-        }
-        case PRU_WRITE: {
-          data_ready = true;
-          current_cmd = PruCommand::Write;
-          rx_ptr = reinterpret_cast<volatile uint8_t*>(this->linuxcnc_back);
-          rx_remaining = sizeof(linuxCncState_t);
-          tx_ptr = nullptr;
-          tx_remaining = sizeof(linuxCncState_t);
-          crc32_init(rx_crc);
-          rx_crc_recv = 0;
-          rx_crc_recv_idx = 0;
-          receive_write();
-          break;
-        }
-        default: {
-          reject_count++;
-          if (reject_count > 5) spi_error = true;
-          const size_t discard_size = (current_cmd == PruCommand::Read) ? sizeof(linuxCncState_t) : sizeof(pruState_t);
-          current_cmd = PruCommand::Invalid;
-          rx_ptr = nullptr;
-          rx_remaining = discard_size;
-          tx_ptr = nullptr;
-          tx_remaining = discard_size;
-          service_discard();
-        }
-      }
+      wait_for_command();
       break;
     }
   }
@@ -303,11 +309,11 @@ void SpiComms::loop() {
           spi_delay++;
         }
 
-        // if (spi_delay > MAX_SPI_DELAY) {
-        //   printf("no communication from LinuxCNC, e-stop active?\n");
-        //   spi_delay = 0;
-        //   current_state = ST_RESET;
-        // }
+        if (spi_delay > MAX_SPI_DELAY) {
+          printf("no communication from LinuxCNC, e-stop active?\n");
+          spi_delay = 0;
+          current_state = ST_RESET;
+        }
         break;
       case ST_RESET:
         if (current_state != prev_state) {
@@ -327,7 +333,3 @@ void SpiComms::loop() {
     wait_us(1000);
   }
 }
-
-// ----- SpiComms minimal accessors -----
-linuxCncState_t volatile* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
-pruState_t volatile* SpiComms::get_pru_state() const { return this->pru_state; }
