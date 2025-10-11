@@ -8,9 +8,7 @@ Stepgen::Stepgen(const uint8_t stepgen_number, Pin* step_pin, Pin* dir_pin, cons
       ticker_frequency(ticker_frequency),
       step_pin(step_pin->as_output()),
       dir_pin(dir_pin->as_output()) {
-  this->dir_pin->set(this->current_dir);
-  // Initialize local accumulator from current feedback to preserve continuity
-  this->accumulator = this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number];
+  this->dir_pin->set(false);
 }
 
 void Stepgen::make_steps() {
@@ -38,17 +36,27 @@ void Stepgen::make_steps() {
   // That value is, unsurprisingly, the fixed-point commanded frequency divided by the integer ticker frequency - to get
   // steps/tick, you divide steps/second by ticks/second.
 
-  if (this->increment == 0) return;
+  const int32_t inc = this->increment;  // Q0.32
+  if (inc == 0) return;
 
-  const int64_t old_position = this->accumulator;
-  this->accumulator += this->increment;
-
-  if ((old_position ^ this->accumulator) & FIXED_ONE) {
-    // the next whole step value is reached, make a step
-    this->step_pin->set(true);
-    this->is_stepping = true;
+  const uint32_t old_sub = this->substeps;
+  this->substeps = old_sub + static_cast<uint32_t>(inc);
+  if (inc >= 0) {
+    if (this->substeps < old_sub) {
+      this->steps += 1;
+      this->step_pin->set(true);
+      this->is_stepping = true;
+    }
+  } else {
+    if (this->substeps > old_sub) {
+      this->steps -= 1;
+      this->step_pin->set(true);
+      this->is_stepping = true;
+    }
   }
-  this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number] = this->accumulator;
+
+  const int64_t pos = (this->steps << 32) + static_cast<uint32_t>(this->substeps);
+  this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number] = pos;
 }
 
 void Stepgen::on_rx() {
@@ -57,17 +65,18 @@ void Stepgen::on_rx() {
       this->last_commanded_frequency == commanded_frequency) {
     return;  // stepper is disabled or the command hasn't changed, nothing to do
   }
+  this->last_commanded_frequency = commanded_frequency;
 
   // the commanded frequency has changed, recalculate the increment
-  this->last_commanded_frequency = commanded_frequency;
-  this->increment =
-      static_cast<int64_t>(commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
+  const auto new_inc =
+      static_cast<int32_t>(commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
+  const bool prev_dir = this->increment > 0;
+  this->increment = new_inc;
 
   // The sign of the increment indicates the desired direction
-  if (const bool is_forward = increment > 0; this->current_dir != is_forward) {
-    this->current_dir = is_forward;
+  if (const bool new_dir = new_inc > 0; prev_dir != new_dir) {
     this->dir_flipped = true;
-    this->dir_pin->set(is_forward);
+    this->dir_pin->set(new_dir);
   }
 }
 
