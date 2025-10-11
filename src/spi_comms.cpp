@@ -57,7 +57,7 @@ extern "C" void SSP0_IRQHandler(void) {
 linuxCncState_t volatile* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
 pruState_t volatile* SpiComms::get_pru_state() const { return this->pru_state; }
 
-void SpiComms::preload_cmd_response() const {
+inline void SpiComms::preload_cmd_response() const {
   constexpr uint32_t resp = PRU_DATA;
   for (size_t i = 0; i < 4; ++i) spi_write(reinterpret_cast<const uint8_t*>(&resp)[i]);
 }

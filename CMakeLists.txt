@@ -24,8 +24,6 @@ endif ()
 
 add_subdirectory(mbed-os)
 
-add_subdirectory(lib/MODDMA)
-
 add_executable(${PROJECT_NAME}
         src/machine_config.cpp
         src/main.cpp
@@ -45,6 +43,6 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)
 
-target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
+target_link_libraries(${PROJECT_NAME} mbed-baremetal)
 
 mbed_set_post_build(${PROJECT_NAME})

@@ -66,7 +66,7 @@ class SpiComms {
     }
   }
 
-  void preload_cmd_response() const;
+  inline void preload_cmd_response() const;
   void transmit_read_response();
   void receive_write_payload();
   void discard_payload();
