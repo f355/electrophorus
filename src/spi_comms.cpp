@@ -14,7 +14,7 @@ SpiComms::SpiComms()
       rx_dma2(new MODDMA_Config()),
       tx_dma1(new MODDMA_Config()),
       tx_dma2(new MODDMA_Config()),
-      linuxcnc_state(new linuxCncState_t()),
+      linuxcnc_state(&temp_rx_buffer2),
       pru_state(new pruState_t()) {
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
@@ -116,9 +116,7 @@ void SpiComms::rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config*
       reject_count = 0;
       // don't copy the linuxcnc_state if the e-stop button is pressed
       if (!this->e_stop_active) {
-        for (size_t i = 0; i < SPI_BUF_SIZE; i++) {
-          this->linuxcnc_state->buffer[i] = rx_buffer.buffer[i];
-        }
+        this->linuxcnc_state = const_cast<linuxCncState_t*>(&rx_buffer);
         data_ready_callback();
       }
       break;
