@@ -159,9 +159,9 @@ int rpi5_spi_init(const int frequency_hz) {
 
 void rpi5_spi_xfer(uint8_t *rx, const uint8_t *tx, const size_t len) {
   if (!rpi5_spi_base) return;
+  // assert CS0
+  rpi5_wr32(rpi5_spi_base, DW_SPI_SER, 1u << 0);
   for (size_t i = 0; i < len; ++i) {
-    // assert CS0 on each byte
-    rpi5_wr32(rpi5_spi_base, DW_SPI_SER, 1u << 0);
     // write TX byte
     rpi5_wr32(rpi5_spi_base, DW_SPI_DR, tx[i]);
     while (rpi5_rd32(rpi5_spi_base, DW_SPI_RXFLR) == 0) {
@@ -169,7 +169,7 @@ void rpi5_spi_xfer(uint8_t *rx, const uint8_t *tx, const size_t len) {
     }
     // read RX byte
     rx[i] = (uint8_t)rpi5_rd32(rpi5_spi_base, DW_SPI_DR);
-    // deassert CS0
-    rpi5_wr32(rpi5_spi_base, DW_SPI_SER, 0);
   }
+  // deassert CS0
+  rpi5_wr32(rpi5_spi_base, DW_SPI_SER, 0);
 }
