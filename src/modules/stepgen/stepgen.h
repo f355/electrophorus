@@ -1,7 +1,7 @@
 #ifndef STEPGEN_H
 #define STEPGEN_H
 
-#include "module.h"
+#include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
@@ -10,24 +10,21 @@ class Stepgen final : public Module {
   uint8_t stepgen_number;
   uint8_t stepgen_enable_mask;
 
-  uint32_t ticker_frequency;
+  Pin *step_pin, *dir_pin;
+
+  int64_t position = 0;               // current position in substeps (fractional steps)
+  volatile int64_t increment = 0;     // number of substeps to move on each tick
+  bool current_dir = true;            // direction we're moving in
   volatile bool dir_flipped = false;  // indicates that the direction has changed
-  bool current_dir = true;            // direction on last iteration, used for dir setup
-  bool is_stepping = false;           // true if the step pin is held high
   float last_commanded_frequency = 0;
-  int64_t accumulator = 0;
-  volatile int64_t increment = 0;
 
  public:
-  Stepgen(uint8_t stepgen_number, Pin *step_pin, Pin *dir_pin, uint32_t ticker_frequency, SpiComms *comms);
+  Stepgen(uint8_t stepgen_number, Pin *step_pin, Pin *dir_pin, SpiComms *comms);
 
   ~Stepgen() = default;
 
-  Pin *step_pin, *dir_pin;
-
-  bool listens_to_rx() override;
-  bool is_base() override;
-  void run_base() override;
+  bool is_stepgen() override;
+  void make_steps() override;
   void on_rx() override;
 };
 

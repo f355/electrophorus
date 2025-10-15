@@ -1,7 +1,7 @@
 #ifndef DIGITALOUTPUTS_H
 #define DIGITALOUTPUTS_H
 
-#include "module.h"
+#include "modules/module.h"
 #include "spi_comms.h"
 
 class DigitalOuts final : public Module {
@@ -12,10 +12,11 @@ class DigitalOuts final : public Module {
   uint32_t* pin_masks;
   uint16_t invert_mask;
 
+  uint16_t last_outputs = 1;  // 1 just so it is not zero
+
  public:
   DigitalOuts(uint8_t num_pins, const outputPin_t pins[], SpiComms* comms);
 
-  bool listens_to_rx() override;
   void on_rx() override;
 };
 #endif

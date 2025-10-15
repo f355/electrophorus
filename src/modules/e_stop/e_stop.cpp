@@ -1,7 +1,7 @@
 #include "e_stop.h"
 
 EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms), normally_closed(pin->inverting) {
-  NVIC_SetPriority(EINT3_IRQn, PIN_IRQ_PRIORITY);
+  NVIC_SetPriority(EINT3_IRQn, GPIO_IRQ_PRIORITY);
   const auto irqPin = new InterruptIn(pin->to_pin_name());
   irqPin->rise(callback(this, &EStop::rise_handler));
   irqPin->fall(callback(this, &EStop::fall_handler));

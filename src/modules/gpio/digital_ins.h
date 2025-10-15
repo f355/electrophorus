@@ -1,7 +1,7 @@
 #ifndef DIGITALINPUTS_H
 #define DIGITALINPUTS_H
 
-#include "module.h"
+#include "modules/module.h"
 #include "spi_comms.h"
 
 class DigitalIns final : public Module {
@@ -15,8 +15,7 @@ class DigitalIns final : public Module {
  public:
   DigitalIns(uint8_t num_pins, const inputPin_t pins[], SpiComms* comms);
 
-  bool is_servo() override;
-  void run_servo() override;
+  void on_rx() override;
 };
 
 #endif

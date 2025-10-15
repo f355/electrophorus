@@ -1,7 +1,7 @@
 #ifndef ADC_H
 #define ADC_H
 
-#include "module.h"
+#include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
@@ -10,14 +10,14 @@ class ADC final : public Module {
   uint8_t var_number;
   AnalogIn* adc;
 
+  uint16_t value;
   uint32_t run_every;
   uint32_t counter;
 
  public:
   ADC(uint8_t var_number, Pin* pin, SpiComms* comms);
 
-  bool is_servo() override;
-  void run_servo() override;
+  void on_rx() override;
 };
 
 #endif

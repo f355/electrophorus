@@ -1,14 +1,14 @@
 #include "machine_config.h"
 
-#include "irq_ticker.h"
-#include "module.h"
 #include "modules/adc/adc.h"
 #include "modules/e_stop/e_stop.h"
 #include "modules/gpio/digital_ins.h"
 #include "modules/gpio/digital_outs.h"
 #include "modules/gpio/pulse_counter.h"
+#include "modules/module.h"
 #include "modules/pwm/pwm.h"
 #include "modules/stepgen/stepgen.h"
+#include "stepgen_ticker.h"
 
 // Carvera Air CA1 configuration
 
@@ -26,10 +26,10 @@ vector<Module*> machine_modules(SpiComms* comms) {
 
   return {
       // XYZA
-      new Stepgen(0, new Pin(1, 28), (new Pin(1, 29))->invert(), BASE_FREQUENCY, comms),
-      new Stepgen(1, new Pin(1, 26), new Pin(1, 27), BASE_FREQUENCY, comms),
-      new Stepgen(2, new Pin(1, 24), (new Pin(1, 25))->invert(), BASE_FREQUENCY, comms),
-      new Stepgen(3, new Pin(1, 21), (new Pin(1, 23))->invert(), BASE_FREQUENCY, comms),
+      new Stepgen(0, new Pin(1, 28), (new Pin(1, 29))->invert(), comms),
+      new Stepgen(1, new Pin(1, 26), new Pin(1, 27), comms),
+      new Stepgen(2, new Pin(1, 24), (new Pin(1, 25))->invert(), comms),
+      new Stepgen(3, new Pin(1, 21), (new Pin(1, 23))->invert(), comms),
 
       // e-stop
       new EStop((new Pin(0, 20))->invert(), comms),

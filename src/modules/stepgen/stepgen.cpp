@@ -1,22 +1,17 @@
 #include "stepgen.h"
 
-Stepgen::Stepgen(const uint8_t stepgen_number, Pin* step_pin, Pin* dir_pin, const uint32_t ticker_frequency,
-                 SpiComms* comms)
+Stepgen::Stepgen(const uint8_t stepgen_number, Pin* step_pin, Pin* dir_pin, SpiComms* comms)
     : comms(comms),
       stepgen_number(stepgen_number),
       stepgen_enable_mask(1 << stepgen_number),
-      ticker_frequency(ticker_frequency),
       step_pin(step_pin->as_output()),
       dir_pin(dir_pin->as_output()) {
   this->dir_pin->set(this->current_dir);
 }
 
-void Stepgen::run_base() {
-  if (this->is_stepping) {
-    // bring down the step pin that was set high on the previous tick
-    this->step_pin->set(false);
-    this->is_stepping = false;
-  }
+void Stepgen::make_steps() {
+  // bring down the step pin that was set high on the previous tick
+  this->step_pin->set(false);
 
   if (this->dir_flipped) {
     // the direction of travel has changed, do not step this iteration to give some setup time.
@@ -38,32 +33,26 @@ void Stepgen::run_base() {
 
   if (this->increment == 0) return;
 
-  int64_t position = this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number];
-  const int64_t old_position = position;
-  position += increment;
+  const int64_t old_position = this->position;
+  this->position += increment;
 
-  if ((old_position ^ position) & FIXED_ONE) {
+  if ((old_position ^ this->position) & FIXED_ONE) {
     // the next whole step value is reached, make a step
     this->step_pin->set(true);
-    this->is_stepping = true;
   }
-  __disable_irq();
-  this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number] = position;
-  __DSB();
-  __enable_irq();
+  this->comms->get_pru_state()->stepgen_feedback[this->stepgen_number] = this->position;
 }
 
 void Stepgen::on_rx() {
   const float commanded_frequency = this->comms->get_linuxcnc_state()->stepgen_freq_command[this->stepgen_number];
   if ((this->comms->get_linuxcnc_state()->stepgen_enable_mask & this->stepgen_enable_mask) == 0 ||
       (this->last_commanded_frequency == commanded_frequency)) {
-    return;  // stepper is disabled or the command hasn't changed, nothing to do
+    return;  // stepgen is disabled or the command hasn't changed, nothing to do
   }
 
   // the commanded frequency has changed, recalculate the increment
   this->last_commanded_frequency = commanded_frequency;
-  this->increment =
-      static_cast<int64_t>(commanded_frequency * (static_cast<float>(FIXED_ONE) / this->ticker_frequency));
+  this->increment = static_cast<int64_t>(commanded_frequency * (static_cast<float>(FIXED_ONE) / BASE_FREQUENCY));
 
   // The sign of the increment indicates the desired direction
   if (const bool is_forward = increment > 0; this->current_dir != is_forward) {
@@ -73,6 +62,4 @@ void Stepgen::on_rx() {
   }
 }
 
-bool Stepgen::listens_to_rx() { return true; }
-
-bool Stepgen::is_base() { return true; }
+bool Stepgen::is_stepgen() { return true; }

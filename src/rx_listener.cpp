@@ -7,7 +7,7 @@ RxListener::RxListener() = default;
 
 void RxListener::start() {
   NVIC_SetVector(PendSV_IRQn, reinterpret_cast<uint32_t>(&RxListener::handle_interrupt));
-  NVIC_SetPriority(PendSV_IRQn, RX_LISTENER_PRIORITY);
+  NVIC_SetPriority(PendSV_IRQn, RX_LISTENER_IRQ_PRIORITY);
   NVIC_EnableIRQ(PendSV_IRQn);
 }
 
@@ -21,7 +21,5 @@ void RxListener::handle_interrupt() {
 }
 
 void RxListener::register_modules(const std::vector<Module*>& ms) {
-  for (auto m : ms) {
-    if (m->listens_to_rx()) this->modules.push_back(m);
-  }
+  for (auto m : ms) this->modules.push_back(m);
 }

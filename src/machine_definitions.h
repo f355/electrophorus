@@ -4,18 +4,16 @@
 #include "machinedef_types.h"
 
 #define BASE_FREQUENCY 120000  // 120 kHz
-#define SERVO_FREQUENCY 1000   // 1 kHz
 
 // on LPC1768, the period is shared among all PWMs,
 // so we don't try setting it to different values - the last one wins.
 // many bothans died to bring us this information.
 #define PWM_PERIOD_US 10000  // 10ms/100Hz
 
-#define DMA_PRIORITY 1
-#define BASE_TICKER_PRIORITY 2
-#define RX_LISTENER_PRIORITY 3
-#define SERVO_TICKER_PRIORITY 4
-#define PIN_IRQ_PRIORITY 5
+#define DMA_IRQ_PRIORITY 0
+#define STEPGEN_TICKER_IRQ_PRIORITY 1
+#define GPIO_IRQ_PRIORITY 2
+#define RX_LISTENER_IRQ_PRIORITY 3
 
 #define STEPGENS 4
 

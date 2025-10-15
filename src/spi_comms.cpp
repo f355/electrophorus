@@ -59,7 +59,7 @@ SpiComms::SpiComms()
       ->attach_tc(this, &SpiComms::rx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
-  NVIC_SetPriority(DMA_IRQn, DMA_PRIORITY);
+  NVIC_SetPriority(DMA_IRQn, DMA_IRQ_PRIORITY);
 
   this->pru_state->header = PRU_DATA;
 

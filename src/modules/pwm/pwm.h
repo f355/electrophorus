@@ -1,7 +1,7 @@
 #ifndef PWM_H
 #define PWM_H
 
-#include "module.h"
+#include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
@@ -16,7 +16,6 @@ class PWM final : public Module {
  public:
   PWM(uint8_t var_number, const Pin *pin, SpiComms *comms);
 
-  bool listens_to_rx() override;
   void on_rx() override;
 };
 

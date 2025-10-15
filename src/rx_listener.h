@@ -3,7 +3,7 @@
 
 #include <vector>
 
-#include "module.h"
+#include "modules/module.h"
 
 class RxListener final {
   std::vector<Module*> modules;

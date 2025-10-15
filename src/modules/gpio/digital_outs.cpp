@@ -26,14 +26,15 @@ DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[], SpiCo
 }
 
 void DigitalOuts::on_rx() {
-  const uint16_t pin_states = this->comms->get_linuxcnc_state()->outputs ^ invert_mask;
+  auto outputs = this->comms->get_linuxcnc_state()->outputs;
+  if (outputs == this->last_outputs) return;
+  this->last_outputs = outputs;
+  outputs ^= this->invert_mask;
   for (uint8_t i = 0; i < num_pins; i++) {
-    if (pin_states >> i & 0b1) {
+    if (outputs >> i & 0b1) {
       ports[i]->FIOSET |= pin_masks[i];
     } else {
       ports[i]->FIOCLR |= pin_masks[i];
     }
   }
 }
-
-bool DigitalOuts::listens_to_rx() { return true; }
