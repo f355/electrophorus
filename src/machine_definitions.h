@@ -3,7 +3,7 @@
 
 #include "machinedef_types.h"
 
-#define BASE_FREQUENCY 120000  // 120 kHz
+#define BASE_FREQUENCY 100000  // 100 kHz
 
 // on LPC1768, the period is shared among all PWMs,
 // so we don't try setting it to different values - the last one wins.

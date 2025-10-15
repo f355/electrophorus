@@ -530,6 +530,12 @@ class MODDMA {
   void Enable(MODDMA_Config *config) { Enable(config->channelNum()); }
 
   /**
+   * Re-arm a previously Setup()'d channel for another identical transfer and enable it.
+   * Only supports m2p and p2m usage.
+   */
+  void Restart(MODDMA_Config *config);
+
+  /**
    * Disable a channel and end data transfer.
    *
    * @ingroup API

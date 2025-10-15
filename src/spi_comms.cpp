@@ -13,57 +13,51 @@ SpiComms::SpiComms()
     : rx_dma1(new MODDMA_Config()),
       rx_dma2(new MODDMA_Config()),
       tx_dma1(new MODDMA_Config()),
-      tx_dma2(new MODDMA_Config()),
-      linuxcnc_state(&temp_rx_buffer2),
-      pru_state(new pruState_t()) {
+      tx_dma2(new MODDMA_Config()) {
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 
   tx_dma1->channelNum(MODDMA::Channel_0)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(pru_state))
-      ->dstMemAddr(0)
+      ->srcMemAddr(reinterpret_cast<uint32_t>(&pru_state))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
-      ->srcConn(0)
       ->dstConn(MODDMA::SSP0_Tx)
       ->attach_tc(this, &SpiComms::tx1_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   tx_dma2->channelNum(MODDMA::Channel_1)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(pru_state))
-      ->dstMemAddr(0)
+      ->srcMemAddr(reinterpret_cast<uint32_t>(&pru_state))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
-      ->srcConn(0)
       ->dstConn(MODDMA::SSP0_Tx)
       ->attach_tc(this, &SpiComms::tx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma1->channelNum(MODDMA::Channel_2)
-      ->srcMemAddr(0)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer1))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
-      ->dstConn(0)
       ->attach_tc(this, &SpiComms::rx1_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma2->channelNum(MODDMA::Channel_3)
-      ->srcMemAddr(0)
       ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer2))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
-      ->dstConn(0)
       ->attach_tc(this, &SpiComms::rx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
-  this->pru_state->header = PRU_DATA;
+  this->pru_state.header = PRU_DATA;
 
   // Pass the configurations to the controller
   dma.Prepare(rx_dma1);
   dma.Prepare(tx_dma1);
+
+  // Pre-configure the alternate ping-pong channels without enabling them
+  dma.Setup(rx_dma2);
+  dma.Setup(tx_dma2);
 
   // Enable SSP0 for DMA
   LPC_SSP0->DMACR = 0;
@@ -73,13 +67,13 @@ SpiComms::SpiComms()
 void SpiComms::tx1_callback() {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
-  dma.Prepare(tx_dma2);
+  dma.Restart(tx_dma2);
 }
 
 void SpiComms::tx2_callback() {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
-  dma.Prepare(tx_dma1);
+  dma.Restart(tx_dma1);
 }
 
 void SpiComms::rx1_callback() { this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2); }
@@ -92,15 +86,12 @@ void SpiComms::data_ready_callback() {
 }
 
 volatile linuxCncState_t* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
-volatile pruState_t* SpiComms::get_pru_state() const { return this->pru_state; }
+volatile pruState_t* SpiComms::get_pru_state() { return &this->pru_state; }
 
 // ReSharper disable once CppDFAUnreachableFunctionCall
 void SpiComms::rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config* other_rx) {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
-
-  data_ready = false;
-  spi_error = false;
 
   // Check and move the received SPI data payload
   switch (rx_buffer.header) {
@@ -120,14 +111,13 @@ void SpiComms::rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config*
       break;
 
     default:
-      reject_count++;
-      if (reject_count > 5) {
+      if (reject_count++ > 5) {
         spi_error = true;
       }
   }
 
   // swap Rx buffers
-  dma.Prepare(other_rx);
+  dma.Restart(other_rx);
 }
 
 void SpiComms::err_callback() { error("DMA error on channel %d!\n", dma.irqProcessingChannel()); }

@@ -56,6 +56,19 @@ uint32_t MODDMA::getControl(CHANNELS ChannelNumber) {
   return pChannel->DMACCControl;
 }
 
+void MODDMA::Restart(MODDMA_Config *c) {
+  LPC_GPDMACH_TypeDef *p = (LPC_GPDMACH_TypeDef *)Channel_p(c->channelNum());
+  if (c->transferType() == m2p) {
+    p->DMACCSrcAddr = c->srcMemAddr();
+  } else { /* p2m */
+    p->DMACCDestAddr = c->dstMemAddr();
+  }
+  const uint32_t ctrl = p->DMACCControl & ~CxControl_TransferSize(0xFFF);
+  p->DMACCControl = ctrl | CxControl_TransferSize(c->transferSize());
+  p->DMACCConfig &= ~CxConfig_H();
+  p->DMACCConfig |= _E;
+}
+
 uint32_t oldDMAHandler = 0;
 typedef void (*MODDMA_FN)(void);
 

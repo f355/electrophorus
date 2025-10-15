@@ -13,11 +13,11 @@ class SpiComms {
   MODDMA_Config* tx_dma1;
   MODDMA_Config* tx_dma2;
 
-  volatile linuxCncState_t* linuxcnc_state;
-  volatile pruState_t* pru_state;
-
   linuxCncState_t temp_rx_buffer1{};
   linuxCncState_t temp_rx_buffer2{};
+
+  volatile linuxCncState_t* linuxcnc_state = &temp_rx_buffer2;
+  volatile pruState_t pru_state{};
 
   uint8_t reject_count = 0;
   volatile bool data_ready = false;
@@ -37,7 +37,7 @@ class SpiComms {
   static void data_ready_callback();
 
   [[nodiscard]] volatile linuxCncState_t* get_linuxcnc_state() const;
-  [[nodiscard]] volatile pruState_t* get_pru_state() const;
+  [[nodiscard]] volatile pruState_t* get_pru_state();
 
   volatile bool e_stop_active = false;
 
