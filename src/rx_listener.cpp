@@ -6,9 +6,9 @@
 RxListener::RxListener() = default;
 
 void RxListener::start() {
-  NVIC_SetVector(PendSV_IRQn, reinterpret_cast<uint32_t>(&RxListener::handle_interrupt));
-  NVIC_SetPriority(PendSV_IRQn, RX_LISTENER_IRQ_PRIORITY);
-  NVIC_EnableIRQ(PendSV_IRQn);
+  constexpr auto irq = PendSV_IRQn;
+  NVIC_SetVector(irq, reinterpret_cast<uint32_t>(&RxListener::handle_interrupt));
+  NVIC_EnableIRQ(irq);
 }
 
 RxListener* RxListener::instance() {

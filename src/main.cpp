@@ -29,6 +29,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
   machine_init();
 
+  // set the interrupt priorities
+  NVIC_SetPriority(DMA_IRQn, 0);     // SpiComms DMA
+  NVIC_SetPriority(TIMER0_IRQn, 1);  // stepgen ticker
+  NVIC_SetPriority(EINT3_IRQn, 2);   // GPIO - PulseCounter, eStop
+  NVIC_SetPriority(PendSV_IRQn, 3);  // RxListener
+
   printf("initializing SPI...\n");
   const auto comms = new SpiComms();
   printf("SPI initialized.\n");

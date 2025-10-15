@@ -10,11 +10,6 @@
 // many bothans died to bring us this information.
 #define PWM_PERIOD_US 10000  // 10ms/100Hz
 
-#define DMA_IRQ_PRIORITY 0
-#define STEPGEN_TICKER_IRQ_PRIORITY 1
-#define GPIO_IRQ_PRIORITY 2
-#define RX_LISTENER_IRQ_PRIORITY 3
-
 #define STEPGENS 4
 
 #define STEPGEN_NAMES {"x", "y", "z", "a"};

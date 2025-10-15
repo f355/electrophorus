@@ -12,7 +12,6 @@ void StepgenTicker::start() const {
 
   constexpr auto irq = TIMER0_IRQn;
   NVIC_SetVector(irq, reinterpret_cast<uint32_t>(&tick));
-  NVIC_SetPriority(irq, STEPGEN_TICKER_IRQ_PRIORITY);
   NVIC_EnableIRQ(irq);
 }
 
