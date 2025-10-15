@@ -11,11 +11,10 @@ class PWM final : public Module {
 
   PwmOut *pwm_pin;  // PWM out object
 
-  int period_us;       // Period (us)
   int32_t duty_cycle;  // Pulse width (tenths of %, per mil)
 
  public:
-  PWM(uint8_t var_number, const Pin *pin, int period_us, SpiComms *comms);
+  PWM(uint8_t var_number, const Pin *pin, SpiComms *comms);
 
   bool listens_to_rx() override;
   void on_rx() override;

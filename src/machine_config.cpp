@@ -40,13 +40,10 @@ vector<Module*> machine_modules(SpiComms* comms) {
       new PulseCounter(0, new Pin(2, 7), comms),  // spindle encoder feedback
 
       // PWMs
-      // on LPC1768, the period is shared among all PWMs,
-      // so don't try setting it to different values - the last one wins.
-      // many bothans died to bring us this information.
-      new PWM(0, new Pin(2, 5), 10000, comms),  // spindle - keep this at output_var=0 for e-stop to kill it
-      new PWM(1, new Pin(2, 1), 10000, comms),  // spindle fan
-      new PWM(2, new Pin(2, 3), 10000, comms),  // power supply fan
-      new PWM(3, new Pin(2, 2), 10000, comms),  // EXT port output
+      new PWM(0, new Pin(2, 5), comms),  // spindle - keep this at output_var=0 for e-stop to kill it
+      new PWM(1, new Pin(2, 1), comms),  // spindle fan
+      new PWM(2, new Pin(2, 3), comms),  // power supply fan
+      new PWM(3, new Pin(2, 2), comms),  // EXT port output
 
       // thermistor ADCs (converted to temperature on LinuxCNC side)
       new ADC(1, new Pin(1, 31), comms),  // spindle
