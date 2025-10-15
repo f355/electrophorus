@@ -33,16 +33,15 @@ possible to use the WiFi module pins too, but it is much harder since it require
 You'll need the following:
 
 1. Carvera Air itself, obviously.
-2. Raspberry Pi 4B (5 might work too, but I don't have one) with a suitable power supply and a MicroSD card.
-3. Female Dupont 2.54mm / 0.1"-pitch pin header connector(-s) compatible with the Raspberry Pi. A single 40-pin
-   connector is highly recommended.
-4. MicroSD breakout board - a PCB with a MicroSD card shape on one end and solder points/terminals on the other. I used
-   one end of a MicroSD extension cable, they're readily available on the internet. Alternatively, you can design such a
-   PCB and cut it on the Carvera itself (please share your design if you do).
-5. (Recommended) 5-pin female Dupont pin header connector for the SWD port (again, 2.54mm / 0.1" pitch).
-6. (Optional) 4-pin female JST XH connector for the UART port. You should have one left over from wiring up
-   the [3D probe](https://www.instructables.com/Carvera-Touch-Probe-Modifications/). :)
-7. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heatshrink,
+2. Raspberry Pi 5 (recommended) or 4B (not well-tested) with a suitable power supply and a MicroSD card.
+3. MicroSD breakout board - a PCB with a MicroSD card shape on one end and solder points/terminals on the other. I used
+   one end of a MicroSD extension cable, they're readily available on the internet. AliExpress has very cheap breakout
+   boards with pin headers, available as "microsd sniffe" (sic, not "sniffer"). Alternatively, you can design the PCB
+   yourself and cut it on the Carvera (please share your design if you do).
+4. Dupont 2.54 mm / 0.1"-pitch pin header connectors, female. A single 40-pin connector housing for the Raspberry Pi is
+   recommended to avoid counting pins every time you plug in the cable. If you choose to connect the SWD port, you'll
+   need a 5-pin connector as well.
+5. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heatshrink,
    etc.)
 
 ### Making the cables
@@ -52,33 +51,32 @@ You'll need the following:
   refer to the physical connector pins, not the logical GPIO numbers.
 * "Wire color" column is purely informational and refers to the colors on the photos below, feel free to use any colors
   you want.
-* Keep the wires reasonably short - 10-15 cm is a good length. We're running stuff at pretty low speeds, so no need for
-  shielded cables or anything like that, but meters of wire is not a good idea either.
+* Keep the wires short to minimize interference - 10-15 cm is a good length.
 * Double and triple check when done.
 
 #### Connector J13 - SPI
 
-It's the MicroSD port. Required - it's the main communication channel between the machine and LinuxCNC.
+It's the MicroSD port. Required, it's the main communication channel between the machine and LinuxCNC.
 
 Pins are numbered according to the [MicroSD pinout](https://en.wikipedia.org/wiki/SD_card#Transfer_modes) in SPI mode.
 Your breakout board might have extra grounds or even a completely different pinout on the cable side, make sure to
 carefully check which pin is which. On the photos below, the black ground wire is in the "wrong" place because my board
 had extra grounds, and it was more convenient to connect it there.
 
-| J13 Pin# | Signal         | RPi pin# | Wire color    |
-|----------|----------------|----------|---------------|
-| 1        | NC             | NC       | Not connected |
-| 2        | nCS / SPI CS   | 24       | Yellow        |
-| 3        | DI / SPI MOSI  | 19       | White         |
-| 4        | 3V3            | NC       | Not connected |
-| 5        | CLK / SPI SCLK | 23       | Green         |
-| 6        | GND            | 25       | Black         |
-| 7        | DO / SPI MISO  | 21       | Orange        |
-| 8        | NC             | NC       | Not connected |
+| J13/MicroSD Pin# | Signal         | RPi pin# | Wire color    |
+|------------------|----------------|----------|---------------|
+| 1                | NC             | NC       | Not connected |
+| 2                | nCS / SPI CS   | 24       | Yellow        |
+| 3                | DI / SPI MOSI  | 19       | White         |
+| 4                | 3V3            | NC       | Not connected |
+| 5                | CLK / SPI SCLK | 23       | Green         |
+| 6                | GND            | 25       | Black         |
+| 7                | DO / SPI MISO  | 21       | Orange        |
+| 8                | NC             | NC       | Not connected |
 
 #### Connector J12 - SWD/Reset
 
-It's a 5-pin Dupont pin header below and to the right of the MCU, next to J3, used for flashing, resetting and debugging
+It's a 5-pin Dupont pin header below and to the right of the MCU, used for flashing, resetting and debugging
 the firmware. You can omit it and flash the firmware using an SD card, but it is much more convenient to do it without
 unplugging the cable.
 
@@ -92,25 +90,9 @@ Pins are numbered bottom-to-top, according to the silkscreen.
 | 4        | SWDCLK | 18       | 24        | Yellow        |
 | 5        | RESET  | 16       | 23        | Orange        |
 
-#### Connector J3 - UART
-
-It's a 4-pin JST-XH connector right below the MCU, where the unused CAM cable was plugged in, used to see the firmware
-console output, mostly for debugging/informational purposes. You can omit this part if you want.
-
-Pins are numbered top-to-bottom, according to the silkscreen.
-
-**NOTE: the board RX should be connected to the RPi TX and vice versa!**
-
-| J3 Pin# | Signal | RPi pin# | Wire color    |
-|---------|--------|----------|---------------|
-| 1       | GND    | 6        | Black         |
-| 2       | 3V3    | NC       | Not connected |
-| 3       | RX/TX  | 10       | Green         |
-| 4       | TX/RX  | 8        | Green         |
-
 #### Result
 
-The resulting cable should look something like this:
+The resulting cable should look something like this (ignore the black-green JST-XH lead, it is not necessary):
 
 ![cable](img/cable.jpeg)
 
