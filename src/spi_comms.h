@@ -10,8 +10,8 @@ class SpiComms {
 
   MODDMA_Config* rx_dma1;
   MODDMA_Config* rx_dma2;
-  MODDMA_Config* tx_dma1;
-  MODDMA_Config* tx_dma2;
+  MODDMA_Config* tx_dma;
+  MODDMA_LLI tx_lli;
 
   linuxCncState_t temp_rx_buffer1{};
   linuxCncState_t temp_rx_buffer2{};
@@ -23,8 +23,6 @@ class SpiComms {
   volatile bool data_ready = false;
   volatile bool spi_error = false;
 
-  void tx1_callback();
-  void tx2_callback();
   void rx1_callback();
   void rx2_callback();
   void err_callback();

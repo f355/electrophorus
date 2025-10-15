@@ -10,27 +10,24 @@
 enum State { ST_IDLE = 0, ST_RUNNING, ST_RESET };
 
 SpiComms::SpiComms()
-    : rx_dma1(new MODDMA_Config()),
-      rx_dma2(new MODDMA_Config()),
-      tx_dma1(new MODDMA_Config()),
-      tx_dma2(new MODDMA_Config()) {
+    : rx_dma1(new MODDMA_Config()), rx_dma2(new MODDMA_Config()), tx_dma(new MODDMA_Config()), tx_lli{} {
   // just initialize the peripheral, the communication is done through DMA
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 
-  tx_dma1->channelNum(MODDMA::Channel_0)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(&pru_state))
-      ->transferSize(SPI_BUF_SIZE)
-      ->transferType(MODDMA::m2p)
-      ->dstConn(MODDMA::SSP0_Tx)
-      ->attach_tc(this, &SpiComms::tx1_callback)
-      ->attach_err(this, &SpiComms::err_callback);
+  // Build TX LLI first (cyclic)
+  this->tx_lli.srcAddr(reinterpret_cast<uint32_t>(&pru_state))
+      ->dstAddr(reinterpret_cast<uint32_t>(&LPC_SSP0->DR))
+      ->control(dma.CxControl_TransferSize(SPI_BUF_SIZE) | dma.CxControl_SBSize(MODDMA::_4) |
+                dma.CxControl_DBSize(MODDMA::_4) | dma.CxControl_SWidth(MODDMA::byte) |
+                dma.CxControl_DWidth(MODDMA::byte) | dma.CxControl_SI())
+      ->nextLLI(reinterpret_cast<uint32_t>(&this->tx_lli));
 
-  tx_dma2->channelNum(MODDMA::Channel_1)
+  tx_dma->channelNum(MODDMA::Channel_0)
       ->srcMemAddr(reinterpret_cast<uint32_t>(&pru_state))
       ->transferSize(SPI_BUF_SIZE)
       ->transferType(MODDMA::m2p)
       ->dstConn(MODDMA::SSP0_Tx)
-      ->attach_tc(this, &SpiComms::tx2_callback)
+      ->dmaLLI(reinterpret_cast<uint32_t>(&this->tx_lli))
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma1->channelNum(MODDMA::Channel_2)
@@ -51,29 +48,15 @@ SpiComms::SpiComms()
 
   this->pru_state.header = PRU_DATA;
 
-  // Pass the configurations to the controller
   dma.Prepare(rx_dma1);
-  dma.Prepare(tx_dma1);
+  dma.Prepare(tx_dma);
 
-  // Pre-configure the alternate ping-pong channels without enabling them
+  // Pre-configure the alternate RX channel without enabling it
   dma.Setup(rx_dma2);
-  dma.Setup(tx_dma2);
 
   // Enable SSP0 for DMA
   LPC_SSP0->DMACR = 0;
   LPC_SSP0->DMACR = 1 << 1 | 1 << 0;  // TX,RX DMA Enable
-}
-
-void SpiComms::tx1_callback() {
-  dma.Disable(dma.irqProcessingChannel());
-  dma.clearTcIrq();
-  dma.Restart(tx_dma2);
-}
-
-void SpiComms::tx2_callback() {
-  dma.Disable(dma.irqProcessingChannel());
-  dma.clearTcIrq();
-  dma.Restart(tx_dma1);
 }
 
 void SpiComms::rx1_callback() { this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2); }
