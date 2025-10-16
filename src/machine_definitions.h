@@ -3,7 +3,7 @@
 
 #include "machinedef_types.h"
 
-#define BASE_FREQUENCY 100000  // 100 kHz
+#define STEPGEN_TICK_FREQUENCY 80000  // 80 kHz, we don't really need more
 
 // on LPC1768, the period is shared among all PWMs,
 // so we don't try setting it to different values - the last one wins.

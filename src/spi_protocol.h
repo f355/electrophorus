@@ -8,7 +8,7 @@
 #define PRU_WRITE 0x77726974  // "writ" SPI payload
 
 // SPI configuration
-#define SPI_BUF_SIZE 52  // maximum of rx/tx sizes
+#define SPI_BUF_SIZE 40  // maximum of rx/tx sizes
 
 #define FIXED_POINT 32
 #define FIXED_ONE (1LL << FIXED_POINT)
@@ -21,22 +21,22 @@ typedef union {
   uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
-    volatile float stepgen_freq_command[STEPGENS];
+    uint32_t steps_per_tick_cmd[STEPGENS];  // Q0.32 steps per base tick (magnitude)
     int32_t output_vars[OUTPUT_VARS];
-    uint8_t stepgen_enable_mask;
+    uint8_t stepgen_dir_mask;  // bit i = forward
     uint16_t outputs;
   };
 } linuxCncState_t;
 
 // struct for PRU -> LinuxCNC communication
-// byte size w/o buffer: 52
+// byte size w/o buffer: 36
 typedef union {
   uint8_t buffer[SPI_BUF_SIZE];
   struct {
     int32_t header;
     int32_t input_vars[INPUT_VARS];
     uint16_t inputs;
-    int64_t stepgen_feedback[STEPGENS];
+    int32_t stepgen_feedback[STEPGENS];
   };
 } pruState_t;
 

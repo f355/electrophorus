@@ -7,7 +7,7 @@ void StepgenTicker::start() const {
   LPC_SC->PCONP |= (1 << 1);               // power on the timer 0
   this->timer->MCR = (1 << 0) | (1 << 1);  // MR0I | MR0R: Clear TC on MR0 match and Generate Interrupt
   this->timer->PR = 0x00;
-  this->timer->MR0 = SystemCoreClock / 4 / BASE_FREQUENCY;
+  this->timer->MR0 = SystemCoreClock / 4 / STEPGEN_TICK_FREQUENCY;
   this->timer->TCR = (1 << 0);  // CNTEN: Start the timer
 
   constexpr auto irq = TIMER0_IRQn;

@@ -73,12 +73,12 @@ typedef struct {
   // computing the feedforward velocity
   hal_float_t old_position_cmd;
 
-  int64_t prev_step_position;
-  int64_t step_position;
-} stepper_state_t;
+  int32_t prev_feedback;
+
+} stepgen_state_t;
 
 typedef struct {
-  stepper_state_t stepgens[STEPGENS];
+  stepgen_state_t stepgens[STEPGENS];
 
   hal_bit_t *spi_enable;  // in: are SPI comms enabled?
   hal_bit_t *spi_reset;   // in: should go low when the machine is pulled out of e-stop
@@ -140,7 +140,7 @@ int rtapi_app_main(void) {
 
   // export all the variables for each stepper and pin
   for (int i = 0; i < STEPGENS; i++) {
-    stepper_state_t *s = &state->stepgens[i];
+    stepgen_state_t *s = &state->stepgens[i];
 
     char *stepper_names[STEPGENS] = STEPGEN_NAMES;
     char *name = stepper_names[i];
@@ -265,7 +265,7 @@ bool pin_err(const int retval) {
   return false;
 }
 
-static void stepgen_instance_position_control(stepper_state_t *s, const long l_period_ns, double *new_vel) {
+static void stepgen_instance_position_control(stepgen_state_t *s, const long l_period_ns, double *new_vel) {
   //(*s->hal.pin.dbg_pos_minus_prev_cmd) = (*s->hal.pin.position_fb) - s->old_position_cmd;
 
   // calculate feed-forward velocity in machine units per second
@@ -361,14 +361,17 @@ static void stepgen_instance_position_control(stepper_state_t *s, const long l_p
 void update_freq(void *arg, const long l_period_ns) {
   state_t *state = arg;
 
+  // recompute dir mask from scratch each cycle
+  linuxcnc_state.stepgen_dir_mask = 0;
+
   // loop through generators
   for (int i = 0; i < STEPGENS; i++) {
-    stepper_state_t *s = &state->stepgens[i];
+    stepgen_state_t *s = &state->stepgens[i];
 
     // first sanity-check our maxaccel and maxvel params
     // maxvel must be >= 0.0, and may not be faster than 1 step per (steplen+stepspace) seconds
 
-    const double max_steps_per_s = (double)BASE_FREQUENCY / 2.0;
+    const double max_steps_per_s = (double)STEPGEN_TICK_FREQUENCY / 2.0;
 
     // max vel supported by current step timings & position-scale
     const double physical_maxvel = max_steps_per_s / fabs(s->hal.param.position_scale);
@@ -427,7 +430,19 @@ void update_freq(void *arg, const long l_period_ns) {
 
     *s->hal.pin.velocity_fb = (hal_float_t)new_vel;
 
-    linuxcnc_state.stepgen_freq_command[i] = new_vel * s->hal.param.position_scale;
+    const double steps_per_s = new_vel * s->hal.param.position_scale;
+
+    // Set direction bit from the sign of velocity (bit i = forward)
+    if (steps_per_s >= 0.0) {
+      linuxcnc_state.stepgen_dir_mask |= 1u << i;
+    } else {
+      linuxcnc_state.stepgen_dir_mask &= ~(1u << i);
+    }
+
+    uint64_t steps_per_tick = (uint64_t)llround(fabs(steps_per_s) * ((double)FIXED_ONE / STEPGEN_TICK_FREQUENCY));
+    if (*s->hal.pin.enable != 1) steps_per_tick = 0;  // disabled axis => zero steps/tick
+    if (steps_per_tick > UINT32_MAX) steps_per_tick = UINT32_MAX;
+    linuxcnc_state.steps_per_tick_cmd[i] = (uint32_t)steps_per_tick;
   }
 }
 
@@ -449,9 +464,9 @@ void spi_read() {
           *state->spi_status = 1;
 
           for (int i = 0; i < STEPGENS; i++) {
-            stepper_state_t *s = &state->stepgens[i];
+            stepgen_state_t *s = &state->stepgens[i];
 
-            const int64_t acc = pru_state.stepgen_feedback[i];
+            const int32_t feedback = pru_state.stepgen_feedback[i];
 
             // those tricky users are always trying to get us to divide by zero
             if (fabs(s->hal.param.position_scale) < 1e-6) {
@@ -464,24 +479,11 @@ void spi_read() {
               }
             }
 
-            // The accumulator is a 32.32 bit fixed-point
-            // representation of the current stepper position.
-            // The fractional part gives accurate velocity at low speeds, and
-            // sub-step position feedback (like sw stepgen).
-            int64_t acc_delta = acc - s->prev_step_position;
-            if (acc_delta > INT64_MAX) {
-              acc_delta -= UINT64_MAX;
-            } else if (acc_delta < INT64_MIN) {
-              acc_delta += UINT64_MAX;
-            }
-            s->step_position += acc_delta;
-
-            if (*s->hal.pin.position_reset != 0) {
-              s->step_position = 0;
-            }
-
-            *s->hal.pin.position_fb = (double)s->step_position / FIXED_ONE / s->hal.param.position_scale;
-            s->prev_step_position = acc;
+            // Integrate Q16.16 delta directly into the position feedback pin
+            const int32_t dd = feedback - s->prev_feedback;
+            s->prev_feedback = feedback;
+            const double dpos = (double)dd / (s->hal.param.position_scale * 65536.0);
+            *s->hal.pin.position_fb = (*s->hal.pin.position_reset != 0) ? 0.0 : (*s->hal.pin.position_fb + dpos);
           }
 
           for (int i = 0; i < INPUT_VARS; i++) {
@@ -521,15 +523,6 @@ void spi_write() {
   int i;
 
   linuxcnc_state.header = PRU_WRITE;
-
-  for (i = 0; i < STEPGENS; i++) {
-    const stepper_state_t *s = &state->stepgens[i];
-    if (*s->hal.pin.enable == 1) {
-      linuxcnc_state.stepgen_enable_mask |= 1 << i;
-    } else {
-      linuxcnc_state.stepgen_enable_mask &= ~(1 << i);
-    }
-  }
 
   for (i = 0; i < OUTPUT_VARS; i++) {
     linuxcnc_state.output_vars[i] = (int32_t)*state->output_vars[i];
