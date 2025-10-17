@@ -2,10 +2,6 @@
 
 set -e
 
-git submodule init
-git submodule update
+./linuxcnc/pi_init/07-linuxcnc-user.sh
 
-mkdir -p build
-cd build
-cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DMBED_TARGET=LPC1768
-sudo ninja flash-electrophorus
+sudo ninja -C cmake-build-release flash-electrophorus
