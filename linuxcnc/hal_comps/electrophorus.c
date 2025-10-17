@@ -29,6 +29,7 @@
 
 #include "hal.h"
 #include "rtapi.h"
+// ReSharper disable once CppUnusedIncludeDirective
 #include "rtapi_app.h"
 
 // SPI drivers
@@ -90,13 +91,12 @@ typedef struct {
   hal_bit_t *inputs[INPUT_PINS * 2];      // digital input pins, twice for inverted 'not' pins
                                           // passed through to LinuxCNC
 
+  linuxCncState_t linuxcnc_state;
+  pruState_t pru_state;
+
   bool spi_reset_old;
+  uint32_t last_packet_seen;
 } state_t;
-
-static state_t *state;
-
-static linuxCncState_t linuxcnc_state;
-static pruState_t pru_state;
 
 /* other globals */
 static int comp_id;  // component ID
@@ -109,9 +109,9 @@ static bool pin_err(int retval);
 static int rt_peripheral_init();
 
 static void update_freq(void *arg, long l_period_ns);
-static void spi_write();
-static void spi_read();
-static void spi_transfer();
+static void spi_write(void *arg, long l_period_ns);
+static void spi_read(void *arg, long l_period_ns);
+static void spi_transfer(state_t *state);
 
 int rtapi_app_main(void) {
   // connect to the HAL, initialise the driver
@@ -122,12 +122,15 @@ int rtapi_app_main(void) {
   }
 
   // allocate shared memory
-  state = hal_malloc(sizeof(state_t));
+  state_t *state = hal_malloc(sizeof(state_t));
   if (state == 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc() failed\n", modname);
     hal_exit(comp_id);
     return -1;
   }
+
+  state->spi_reset_old = false;
+  state->last_packet_seen = 0;
 
   if (rt_peripheral_init() != 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "rt_peripheral_init failed.\n");
@@ -234,7 +237,7 @@ int rtapi_app_main(void) {
 
   rtapi_snprintf(name, sizeof(name), "%s.write", prefix);
   /* no FP operations */
-  retval = hal_export_funct(name, spi_write, 0, 0, 0, comp_id);
+  retval = hal_export_funct(name, spi_write, state, 0, 0, comp_id);
   if (retval < 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: write function export failed\n", modname);
     hal_exit(comp_id);
@@ -293,7 +296,7 @@ void update_freq(void *arg, const long l_period_ns) {
   state_t *state = arg;
 
   // recompute dir mask from scratch each cycle
-  linuxcnc_state.stepgen_dir_mask = 0;
+  state->linuxcnc_state.stepgen_dir_mask = 0;
 
   // loop through generators
   for (int i = 0; i < STEPGENS; i++) {
@@ -365,120 +368,128 @@ void update_freq(void *arg, const long l_period_ns) {
 
     // Set direction bit from the sign of velocity (bit i = forward)
     if (steps_per_s >= 0.0) {
-      linuxcnc_state.stepgen_dir_mask |= 1u << i;
+      state->linuxcnc_state.stepgen_dir_mask |= 1u << i;
     } else {
-      linuxcnc_state.stepgen_dir_mask &= ~(1u << i);
+      state->linuxcnc_state.stepgen_dir_mask &= ~(1u << i);
     }
 
     uint64_t steps_per_tick = (uint64_t)llround(fabs(steps_per_s) * ((double)FIXED_ONE / STEPGEN_TICK_FREQUENCY));
     if (*s->hal.pin.enable != 1) steps_per_tick = 0;  // disabled axis => zero steps/tick
     if (steps_per_tick > UINT32_MAX) steps_per_tick = UINT32_MAX;
-    linuxcnc_state.steps_per_tick_cmd[i] = (uint32_t)steps_per_tick;
+    state->linuxcnc_state.steps_per_tick_cmd[i] = (uint32_t)steps_per_tick;
   }
 }
 
-void spi_read() {
-  // Data header
-  linuxcnc_state.header = PRU_READ;
+void spi_read(void *arg, const long l_period_ns) {
+  state_t *state = arg;
+  (void)l_period_ns;
 
-  if (*(state->spi_enable)) {
-    if ((*state->spi_reset && !state->spi_reset_old) || *state->spi_status) {
-      // reset rising edge detected, try SPI transfer and reset OR PRU running
+  // detect reset rising edge (happens when the machine is pulled out of e-stop)
+  const bool reset_edge = (*state->spi_reset && !state->spi_reset_old);
+  state->spi_reset_old = *state->spi_reset;
 
-      // Transfer to and from the PRU
-      spi_transfer();
+  if (!*state->spi_enable || (!reset_edge && !*state->spi_status)) {
+    // we're either in e-stop completely, or the comms are not up and we're not trying to come out of e-stop (i.e.
+    // something is wrong)
+    *state->spi_status = 0;
+    return;
+  }
 
-      switch (pru_state.header)  // only process valid SPI payloads. This rejects bad payloads
-      {
-        case PRU_DATA:
-          // we have received a GOOD payload from the PRU
-          *state->spi_status = 1;
+  state->linuxcnc_state.command = PRU_READ;
 
-          for (int i = 0; i < STEPGENS; i++) {
-            stepgen_state_t *s = &state->stepgens[i];
+  // Transfer to and from the PRU
+  spi_transfer(state);
 
-            const int32_t feedback = pru_state.stepgen_feedback[i];
+  const uint32_t cnt = state->pru_state.packet_counter;
 
-            // those tricky users are always trying to get us to divide by zero
-            if (fabs(s->hal.param.position_scale) < 1e-6) {
-              if (s->hal.param.position_scale >= 0.0) {
-                s->hal.param.position_scale = 1.0;
-                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to 1.0\n", i);
-              } else {
-                s->hal.param.position_scale = -1.0;
-                rtapi_print_msg(RTAPI_MSG_ERR, "stepgen %d position_scale is too close to 0, resetting to -1.0\n", i);
-              }
-            }
+  bool reset_feedback = false;
+  bool publish_inputs = false;
 
-            // Integrate Q16.16 delta directly into the position feedback pin
-            const int32_t dd = feedback - s->prev_feedback;
-            s->prev_feedback = feedback;
-            const double dpos = (double)dd / (s->hal.param.position_scale * 65536.0);
-            *s->hal.pin.position_fb = (*s->hal.pin.position_reset != 0) ? 0.0 : (*s->hal.pin.position_fb + dpos);
-          }
+  if (reset_edge) {
+    // we're out of estop, accept any counter
+    if (state->last_packet_seen != 0 && cnt == PRU_INIT_PKT) {
+      rtapi_print_msg(RTAPI_MSG_ERR,
+                      "PRU has been reset while LinuxCNC was in e-stop. If the axes were moved by hand, "
+                      "you need to un-home and re-home the machine.\n");
+    }
+    *state->spi_status = 1;
+    reset_feedback = true;
+    publish_inputs = true;
+  } else if (state->last_packet_seen + 1u == cnt) {
+    // in normal operation, the packet counter steadily increments
+    *state->spi_status = 1;
+    for (int i = 0; i < STEPGENS; i++) {
+      stepgen_state_t *s = &state->stepgens[i];
+      const int32_t feedback = state->pru_state.stepgen_feedback[i];
 
-          for (int i = 0; i < INPUT_VARS; i++) {
-            *state->input_vars[i] = pru_state.input_vars[i];
-          }
+      const int32_t dd = feedback - s->prev_feedback;
+      s->prev_feedback = feedback;
+      const double dpos = (double)dd / (s->hal.param.position_scale * 65536.0);
+      *s->hal.pin.position_fb = *s->hal.pin.position_reset != 0 ? 0.0 : (*s->hal.pin.position_fb + dpos);
+    }
+    publish_inputs = true;
+  } else {
+    // packet counter mismatch, PRU is misbehaving; disable comms and drop into e-stop
+    *state->spi_status = 0;
+    reset_feedback = true;
+  }
 
-          // Inputs
-          for (int i = 0; i < INPUT_PINS; i++) {
-            if ((pru_state.inputs & (1 << i)) != 0) {
-              *state->inputs[i] = 1;               // input is high
-              *state->inputs[i + INPUT_PINS] = 0;  // inverted 'not' is offset by number of digital inputs.
-            } else {
-              *state->inputs[i] = 0;               // input is low
-              *state->inputs[i + INPUT_PINS] = 1;  // inverted 'not' is offset by number of digital inputs.
-            }
-          }
-          break;
+  state->last_packet_seen = cnt;
 
-        default:
-          // we have received a BAD payload from the PRU
-          *state->spi_status = 0;
-          rtapi_print("Bad SPI payload:");
-          for (int i = 0; i < SPI_BUF_SIZE; i++) {
-            rtapi_print(" %02x", pru_state.buffer[i]);
-          }
-          rtapi_print("\n");
+  if (reset_feedback) {
+    for (int i = 0; i < STEPGENS; i++) {
+      state->stepgens[i].prev_feedback = state->pru_state.stepgen_feedback[i];
+    }
+  }
+
+  if (publish_inputs) {
+    for (int i = 0; i < INPUT_VARS; i++) {
+      *state->input_vars[i] = state->pru_state.input_vars[i];
+    }
+    for (int i = 0; i < INPUT_PINS; i++) {
+      if ((state->pru_state.inputs & (1 << i)) != 0) {
+        *state->inputs[i] = 1;
+        *state->inputs[i + INPUT_PINS] = 0;
+      } else {
+        *state->inputs[i] = 0;
+        *state->inputs[i + INPUT_PINS] = 1;
       }
     }
-  } else {
-    *state->spi_status = 0;
   }
-
-  state->spi_reset_old = *state->spi_reset;
 }
 
-void spi_write() {
+void spi_write(void *arg, const long l_period_ns) {
+  state_t *state = arg;
+  (void)l_period_ns;
+
   int i;
 
-  linuxcnc_state.header = PRU_WRITE;
+  state->linuxcnc_state.command = PRU_WRITE;
 
   for (i = 0; i < OUTPUT_VARS; i++) {
-    linuxcnc_state.output_vars[i] = (int32_t)*state->output_vars[i];
+    state->linuxcnc_state.output_vars[i] = (int32_t)*state->output_vars[i];
   }
 
   for (i = 0; i < OUTPUT_PINS; i++) {
     if (*state->outputs[i] == 1) {
-      linuxcnc_state.outputs |= 1 << i;
+      state->linuxcnc_state.outputs |= 1 << i;
     } else {
-      linuxcnc_state.outputs &= ~(1 << i);
+      state->linuxcnc_state.outputs &= ~(1 << i);
     }
   }
 
   if (*state->spi_status) {
-    spi_transfer();
+    spi_transfer(state);
   }
 }
 
-void spi_transfer() {
+void spi_transfer(state_t *state) {
   switch (spi_driver) {
     case SPI_RPI4:
-      rpi4_spi_xfer(pru_state.buffer, linuxcnc_state.buffer, SPI_BUF_SIZE);
+      rpi4_spi_xfer(state->pru_state.buffer, state->linuxcnc_state.buffer, SPI_BUF_SIZE);
       break;
     case SPI_RPI5:
-      rpi5_spi_xfer(pru_state.buffer, linuxcnc_state.buffer, SPI_BUF_SIZE);
+      rpi5_spi_xfer(state->pru_state.buffer, state->linuxcnc_state.buffer, SPI_BUF_SIZE);
       break;
     default:
       rtapi_print_msg(RTAPI_MSG_ERR, "unknown SPI driver\n");

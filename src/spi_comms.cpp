@@ -46,7 +46,8 @@ SpiComms::SpiComms()
       ->attach_tc(this, &SpiComms::rx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
-  this->pru_state.header = PRU_DATA;
+  // Initialize PRU->host packet counter
+  this->pru_state.packet_counter = PRU_INIT_PKT;
 
   dma.Prepare(rx_dma1);
   dma.Prepare(tx_dma);
@@ -77,8 +78,10 @@ void SpiComms::rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config*
   dma.clearTcIrq();
 
   // Check and move the received SPI data payload
-  switch (rx_buffer.header) {
+  switch (rx_buffer.command) {
     case PRU_READ:
+      // Increment packet counter for the next reply
+      this->pru_state.packet_counter++;
       data_ready = true;
       reject_count = 0;
       break;
