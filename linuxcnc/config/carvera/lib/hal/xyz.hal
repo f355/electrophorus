@@ -2,6 +2,7 @@
 setp carvera.stepgen.x.position-scale [JOINT_0]SCALE
 setp carvera.stepgen.x.maxvel [JOINT_0]STEPGEN_MAXVEL
 setp carvera.stepgen.x.maxaccel [JOINT_0]STEPGEN_MAXACCEL
+setp axis.x.jog-accel-fraction 0.3
 
 net joint.x.position-cmd joint.0.motor-pos-cmd => carvera.stepgen.x.position-cmd
 net joint.x.position-fb carvera.stepgen.x.position-fb => joint.0.motor-pos-fb
@@ -13,6 +14,7 @@ net joint.x.alarm carvera.input.stall-alarm-x => joint.0.amp-fault-in
 setp carvera.stepgen.y.position-scale [JOINT_1]SCALE
 setp carvera.stepgen.y.maxvel [JOINT_1]STEPGEN_MAXVEL
 setp carvera.stepgen.y.maxaccel [JOINT_1]STEPGEN_MAXACCEL
+setp axis.y.jog-accel-fraction 0.3
 
 net joint.y.position-cmd joint.1.motor-pos-cmd => carvera.stepgen.y.position-cmd
 net joint.y.position-fb carvera.stepgen.y.position-fb => joint.1.motor-pos-fb
@@ -24,6 +26,7 @@ net joint.y.alarm carvera.input.stall-alarm-y => joint.1.amp-fault-in
 setp carvera.stepgen.z.position-scale [JOINT_2]SCALE
 setp carvera.stepgen.z.maxvel [JOINT_2]STEPGEN_MAXVEL
 setp carvera.stepgen.z.maxaccel [JOINT_2]STEPGEN_MAXACCEL
+setp axis.z.jog-accel-fraction 0.3
 
 net joint.z.position-cmd joint.2.motor-pos-cmd => carvera.stepgen.z.position-cmd
 net joint.z.position-fb carvera.stepgen.z.position-fb => joint.2.motor-pos-fb
