@@ -109,6 +109,7 @@ function _;
 #include "rtapi_math.h"
 
 FUNCTION(_) {
+  probe_selected = tool_number == probe_number;
   bool input_active = probe_in || tool_setter_in;
   if (!input_active) {
     // both inputs are inactive, reset the state/outputs and bail out
@@ -118,7 +119,6 @@ FUNCTION(_) {
     return;
   }
 
-  probe_selected = tool_number == probe_number;
   float x = current_x;
   float y = current_y;
   float z = current_z;
