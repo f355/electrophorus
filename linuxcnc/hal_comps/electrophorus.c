@@ -268,28 +268,93 @@ bool pin_err(const int retval) {
   return false;
 }
 
-static void stepgen_instance_position_control(stepgen_state_t *s, const long l_period_ns, double *new_vel) {
-  // Feed-forward velocity (pos units / s)
+static double stepgen_instance_position_control(stepgen_state_t *s, const long l_period_ns) {
+  // calculate feed-forward velocity in machine units per second
   const double ff_vel = (*s->hal.pin.position_cmd - s->old_position_cmd) / f_period_s;
+
   s->old_position_cmd = *s->hal.pin.position_cmd;
 
-  // Proportional correction on position error mapped to velocity (units/s)
-  const double pos_err = *s->hal.pin.position_cmd - (*s->hal.pin.position_fb + ff_vel * f_period_s);
-  const double kp = 0.5;  // velocity = ff + kp * (pos_err / dt)
-  double velocity_cmd = ff_vel + kp * (pos_err / f_period_s);
+  const double velocity_error = *s->hal.pin.velocity_fb - ff_vel;
 
-  // Acceleration limiting relative to current velocity feedback
-  if (s->hal.param.maxaccel > 0.0) {
-    const double dv = velocity_cmd - *s->hal.pin.velocity_fb;
-    const double dv_max = s->hal.param.maxaccel * f_period_s;
-    if (dv > dv_max) {
-      velocity_cmd = *s->hal.pin.velocity_fb + dv_max;
-    } else if (dv < -dv_max) {
-      velocity_cmd = *s->hal.pin.velocity_fb - dv_max;
+  // Do we need to change speed to match the speed of position-cmd?
+  // If maxaccel is 0, there's no accel limit: fix this velocity error
+  // by the next servo period!  This leaves acceleration control up to
+  // the trajectory planner.
+  // If maxaccel is not zero, the user has specified a maxaccel and we
+  // adhere to that.
+  double match_accel;
+  if (velocity_error > 0.0) {
+    if (s->hal.param.maxaccel == 0) {
+      match_accel = -velocity_error / f_period_s;
+    } else {
+      match_accel = -s->hal.param.maxaccel;
     }
+  } else if (velocity_error < 0.0) {
+    if (s->hal.param.maxaccel == 0) {
+      match_accel = velocity_error / f_period_s;
+    } else {
+      match_accel = s->hal.param.maxaccel;
+    }
+  } else {
+    match_accel = 0;
   }
 
-  *new_vel = velocity_cmd;
+  double seconds_to_vel_match;
+  if (match_accel == 0) {
+    // vel is just right, dont need to accelerate
+    seconds_to_vel_match = 0.0;
+  } else {
+    seconds_to_vel_match = -velocity_error / match_accel;
+  }
+  //*s->hal.pin.dbg_s_to_match = seconds_to_vel_match;
+
+  // compute expected position at the time of velocity match
+  // Note: this is "feedback position at the beginning of the servo period after we attain velocity match"
+  double position_at_match;
+  {
+    const double avg_v = (ff_vel + *s->hal.pin.velocity_fb) * 0.5;
+    position_at_match = *s->hal.pin.position_fb + avg_v * (seconds_to_vel_match + f_period_s);
+  }
+
+  // Note: this assumes that position-cmd keeps the current velocity
+  const double position_cmd_at_match = *s->hal.pin.position_cmd + ff_vel * seconds_to_vel_match;
+  const double error_at_match = position_at_match - position_cmd_at_match;
+
+  //*s->hal.pin.dbg_err_at_match = error_at_match;
+
+  double velocity_cmd;
+  if (seconds_to_vel_match < f_period_s) {
+    // we can match velocity in one period
+    // try to correct whatever position error we have
+    velocity_cmd = ff_vel - (0.5 * error_at_match / f_period_s);
+
+    // apply accel limits?
+    if (s->hal.param.maxaccel > 0) {
+      if (velocity_cmd > *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s) {
+        velocity_cmd = *s->hal.pin.velocity_fb + s->hal.param.maxaccel * f_period_s;
+      } else if (velocity_cmd < *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s) {
+        velocity_cmd = *s->hal.pin.velocity_fb - s->hal.param.maxaccel * f_period_s;
+      }
+    }
+
+  } else {
+    // we're going to have to work for more than one period to match velocity
+    // FIXME: I dont really get this part yet
+
+    // calculate change in final position if we ramp in the opposite direction for one period
+    const double dv = -2.0 * match_accel * f_period_s;
+    const double dp = dv * seconds_to_vel_match;
+
+    // decide which way to ramp
+    if (fabs(error_at_match + dp * 2.0) < fabs(error_at_match)) {
+      match_accel = -match_accel;
+    }
+
+    // and do it
+    velocity_cmd = *s->hal.pin.velocity_fb + match_accel * f_period_s;
+  }
+
+  return velocity_cmd;
 }
 
 void update_freq(void *arg, const long l_period_ns) {
@@ -342,7 +407,7 @@ void update_freq(void *arg, const long l_period_ns) {
     double new_vel;
     // select the new velocity we want
     if (*s->hal.pin.control_type == 0) {
-      stepgen_instance_position_control(s, l_period_ns, &new_vel);
+      new_vel = stepgen_instance_position_control(s, l_period_ns);
     } else {
       // velocity-mode control is easy
       new_vel = *s->hal.pin.velocity_cmd;
