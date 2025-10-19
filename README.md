@@ -52,11 +52,11 @@ You'll need the following:
 * "Wire color" column is purely informational and refers to the colors on the photos below, feel free to use any colors
   you want.
 * Keep the wires short to minimize interference - 10-15 cm is a good length.
-* Double- and triple-check when done.
+* Double- and triple-check when done, improper wiring can damage the Carvera board.
 
 #### Connector J13 - SPI
 
-It's the MicroSD port. Required; it's the main communication channel between the machine and LinuxCNC.
+It's the MicroSD port. Required; it is the main communication channel between the machine and LinuxCNC.
 
 Pins are numbered according to the [MicroSD pinout](https://en.wikipedia.org/wiki/SD_card#Transfer_modes) in SPI mode.
 Your breakout board might have extra grounds or even a completely different pinout on the cable side, make sure to
@@ -78,7 +78,7 @@ had extra grounds, and it was more convenient to connect it there.
 
 It's a 5-pin DuPont pin header below and to the right of the MCU, used for flashing, resetting, and debugging
 the firmware. You can omit it and flash the firmware using an SD card, but it is much more convenient to do it without
-unplugging the cable.
+unplugging the SPI cable.
 
 Pins are numbered bottom-to-top, according to the silkscreen.
 
@@ -109,7 +109,7 @@ The external emergency stop button that comes with these machines is a normally-
 serious safety problem: if the button wiring fails, or you simply forget to plug it in by accident, the machine would
 still run just fine. Then, if an emergency happens and you press the button, nothing would happen.
 
-Because of that, Electrophorus requires you to re-wire the button.
+Because of that, Electrophorus requires you to re-wire the button for the normally-closed operation.
 
 It is very easy to do, and it is a good idea in general, even if you are using the stock firmware. You need to open the
 button housing by removing the four screws on the top, re-plug the red wire from the NO to the NC terminal, and assemble
@@ -164,14 +164,15 @@ LinuxCNC.
 
 ### Flashing the firmware
 
-If you have connected the SWD port, you can flash the firmware directly to the Carvera board:
+If you have connected the SWD port, you can flash the firmware directly to the Carvera board. From an SSH session on the
+Raspberry Pi or a terminal on the remote desktop:
 
 ```bash
 cd ~/electrophorus
 ./flash.sh
 ```
 
-If the machine beeps and reboots, it worked.
+If the machine beeps and reboots, it has worked.
 
 Alternatively, you can flash it through the SD card as usual, the firmware should be in
 `~/electrophorus/cmake-build-release/electrophorus.bin`.
@@ -179,9 +180,9 @@ Alternatively, you can flash it through the SD card as usual, the firmware shoul
 ### Starting LinuxCNC
 
 Start LinuxCNC by opening `http://<pi_ip_or_hostname>/vnc.html` in your browser, connecting to the remote desktop, and
-launching LinuxCNC from the "Applications" menu on the top left, "CNC" -> "LinuxCNC". In the window that opens, scroll
-up and select "My Configurations" → "carvera" → "carvera_air_3axis". Check the box to create a desktop shortcut if you
-want, and press OK.
+launching LinuxCNC from the "Applications" menu on the top left, "CNC" → "LinuxCNC". In the window that opens, scroll
+up if needed and select "My Configurations" → "carvera" → "carvera_air_3axis". Check the box to create a desktop
+shortcut if you want to, and press OK.
 
 Make sure the SPI cable is connected and the machine is powered on, then press the red "ESTOP SET" button in the top
 right corner. The button should turn green. If it doesn't, check the connections and try again. Next, press the "MACHINE
@@ -194,8 +195,8 @@ information.
 
 ### CAM Post-Processors
 
-There's a LinuxCNC post-processor for Fusion 360 in [their library](https://cam.autodesk.com/hsmposts), just search
-for "LinuxCNC (EMC2)". You can use
+There's a LinuxCNC post-processor for Fusion 360 in the [Autodesk's library](https://cam.autodesk.com/hsmposts), just
+search for "LinuxCNC (EMC2)". You can use
 the [community profile](https://github.com/Carvera-Community/Carvera_Community_Profiles) for Fusion 360, with the
 machine simulation and all other bells and whistles, just change the post-processor to the one mentioned above.
 
