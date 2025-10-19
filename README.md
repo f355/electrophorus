@@ -1,21 +1,21 @@
 # electrophorus
 
 **WARNING: The author(s) assume absolutely no responsibility for any damage and/or disappointment that might occur as a
-result of following the instructions below. This project is currently still a work in progress (almost nothing
-works!) and would work only on Carvera Air. DO NOT TRY THIS AT HOME unless you understand what you're doing and are
-willing to deal with the issues and fix the bugs yourself (I might help with that, though).**
+result of following the instructions below. This project is currently still a work in progress and works only on Carvera
+Air. DO NOT TRY THIS AT HOME unless you understand what you're doing and are willing to deal with the issues and fix the
+bugs yourself (I might help with that, though).**
 
 Electrophorus is a project that allows you to convert a Carvera-family desktop CNC milling machine
 by [Makera Inc.](https://www.makera.com/)
 to use [LinuxCNC](https://linuxcnc.org/) as a controller with the help of
 a [Raspberry Pi](https://www.raspberrypi.com/).
 
-It works by offloading the real-time functions (pulsing the motor drivers) to the Carvera board/firmware, while the
+It works by offloading the real-time functions (pulsing the stepper drivers) to the Carvera board/firmware, while the
 computation-heavy parts (G-code parsing, trajectory planning, motion control, etc.) are handled by LinuxCNC running on
 the Raspberry Pi. If you're familiar with LinuxCNC concepts, the Carvera board acts as a Programmable Realtime Unit
 (PRU) on a BeagleBone or a limited version of a Mesa card.
 
-I (@f355) don't have the big-brother Carvera (C1), so for now it is supposed to only work (or not) with
+I (@f355) don't have the big-brother Carvera (C1), so for now it is supposed to only work (or not :)) with
 Carvera Air (CA1).
 
 The project started as a fork of the fantastic [Remora](https://github.com/scottalford75/Remora) project. The Remora
@@ -23,7 +23,7 @@ authors [say they "dont ...not support"](https://github.com/scottalford75/Remora
 LPC1768-based boards, so this is a hard-fork; the changes are not intended to be upstreamed, and the code has been
 pretty much rewritten.
 
-## Making it work (Carvera Air)
+## Wiring (Carvera Air)
 
 The communication between the machine's board and the Raspberry Pi is done over the SPI bus. Unfortunately, both SSP/SPI
 interfaces on the board are populated - SSP0 by the SD card and SSP1 by the ESP8266-based Wi-Fi module. We won't need
@@ -76,7 +76,7 @@ had extra grounds, and it was more convenient to connect it there.
 
 #### Connector J12 - SWD/Reset
 
-It's a 5-pin Dupont pin header below and to the right of the MCU, used for flashing, resetting, and debugging
+It's a 5-pin DuPont pin header below and to the right of the MCU, used for flashing, resetting, and debugging
 the firmware. You can omit it and flash the firmware using an SD card, but it is much more convenient to do it without
 unplugging the cable.
 
@@ -103,25 +103,103 @@ All connected together:
 Please excuse the crudity of the model; I didn't have time to build it to scale or to paint it. Coming up with a way to
 permanently mount the Raspberry Pi while providing adequate cooling is left as an exercise to the reader.
 
-### Building the firmware
+### Normally-closed E-stop button
 
-Follow the [official Mbed CE instructions](https://mbed-ce.dev/getting-started/toolchain-install/). Use this repo
-instead of the `mbed-ce-hello-world`, with `Release` build type and `LPC1768` target.
+The external emergency stop button that comes with these machines is a normally-open button. That poses a pretty
+serious safety problem: if the button wiring fails, or you simply forget to plug it in by accident, the machine would
+still run just fine. Then, if an emergency happens and you press the button, nothing would happen.
 
-If you're doing this on the Raspberry Pi itself, and it is connected to the machine, you can flash the firmware with
-`sudo ninja flash-electrophorus`.
+Because of that, Electrophorus requires you to re-wire the button.
 
-Instead of flashing the firmware through SWD - e.g., if you've chosen to not connect that port - you can rename
-`build/electrophorus.bin` to `firmware.bin` and put it in the root folder of the SD card as usual. The firmware is
-(obviously) not using the SD card at all, so you can leave the rest of the files on it.
+It is very easy to do, and it is a good idea in general, even if you are using the stock firmware. You need to open the
+button housing by removing the four screws on the top, re-plug the red wire from the NO to the NC terminal, and assemble
+it back.
 
-We're not touching the bootloader, so to go back to the [stock](https://github.com/MakeraInc/CarveraFirmware/releases)
-or [community](https://github.com/Carvera-Community/Carvera_Community_Firmware/releases) firmware, you just need to
-download it, rename it to `firmware.bin` and put it on the SD card.
+If you are using the stock/community firmware, you need to start the machine with the button disconnected, type
+`config-set sd e_stop_pin 0.20!^` (for Carvera Air) or `config-set sd e_stop_pin 0.26!^` (for Carvera) in the MDI
+console, connect the button, and reset the machine.
 
-### Configuring LinuxCNC
+## Setting up the software
 
-Coming soon, carefuling is in progress.
+### Raspberry Pi configuration
+
+As of now, Electrophorus only supports "headless" mode, meaning that you connect to the Raspberry Pi's desktop through a
+web browser and control it from there. There's no support for running it with a monitor and a keyboard attached (pull
+requests welcome).
+
+Start with the [Raspberry Pi Imager](https://www.raspberrypi.com/software/) as usual and write the Raspberry Pi OS Lite
+to the SD card. You _need_ to use the Lite variant - full images use Wayland as the display server, which has pretty
+serious detrimental effects on the LinuxCNC performance. Make sure to enable SSH, configure the Wi-Fi network and apply
+any other customizations you need.
+
+Boot the Raspberry Pi from the SD card and connect to it over SSH. Then, install git:
+
+```bash
+sudo apt update
+sudo apt install git
+```
+
+Clone this repository:
+
+```bash
+git clone https://github.com/f355/electrophorus.git
+cd electrophorus
+```
+
+...and run the installer script:
+
+```bash
+./install.sh
+```
+
+It would take a while, be patient. After finishing, the installer would ask you to reboot the Raspberry Pi. Do that by
+issuing `sudo reboot`.
+
+After rebooting, connect to the Raspberry Pi again and check if the remote desktop is working by opening
+`http://<pi_ip_or_hostname>/vnc.html` in your browser and pressing the "Connect" button. You should see the desktop.
+
+The installer also configures an SMB share for the `linuxcnc` folder, so you can access it from Windows or macOS
+machines on the same network and upload G-code files. Put them in the `nc_files` folder and they will be available in
+LinuxCNC.
+
+### Flashing the firmware
+
+If you have connected the SWD port, you can flash the firmware directly to the Carvera board:
+
+```bash
+cd ~/electrophorus
+./flash.sh
+```
+
+If the machine beeps and reboots, it worked.
+
+Alternatively, you can flash it through the SD card as usual, the firmware should be in
+`~/electrophorus/cmake-build-release/electrophorus.bin`.
+
+### Starting LinuxCNC
+
+Start LinuxCNC by opening `http://<pi_ip_or_hostname>/vnc.html` in your browser, connecting to the remote desktop, and
+launching LinuxCNC from the "Applications" menu on the top left, "CNC" -> "LinuxCNC". In the window that opens, scroll
+up and select "My Configurations" → "carvera" → "carvera_air_3axis". Check the box to create a desktop shortcut if you
+want, and press OK.
+
+Make sure the SPI cable is connected and the machine is powered on, then press the red "ESTOP SET" button in the top
+right corner. The button should turn green. If it doesn't, check the connections and try again. Next, press the "MACHINE
+OFF" button; it should also turn green. Finally, press the "HOME ALL" button. The machine should home itself, and
+congratulations, you are ready to go!
+
+Describing how to use LinuxCNC is beyond the scope of this project; please refer to the
+[LinuxCNC documentation](https://linuxcnc.org/docs/html/) and [forums](https://forum.linuxcnc.org/) for more
+information.
+
+### CAM Post-Processors
+
+There's a LinuxCNC post-processor for Fusion 360 in [their library](https://cam.autodesk.com/hsmposts), just search
+for "LinuxCNC (EMC2)". You can use
+the [community profile](https://github.com/Carvera-Community/Carvera_Community_Profiles) for Fusion 360, with the
+machine simulation and all other bells and whistles, just change the post-processor to the one mentioned above.
+
+MakeraCAM outputs pretty standard G-code, so it might work out of the box, but it has not been tested.
 
 ## License
 

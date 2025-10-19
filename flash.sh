@@ -2,6 +2,6 @@
 
 set -e
 
-./linuxcnc/pi_init/07-linuxcnc-user.sh
+./linuxcnc/pi_init/08-firmware-user.sh
 
 sudo ninja -C cmake-build-release flash-electrophorus
