@@ -1,7 +1,7 @@
 # electrophorus
 
 **WARNING: The author(s) assume absolutely no responsibility for any damage and/or disappointment that might occur as a
-result of following the instructions below. This project is currently still is heavily work in progress (almost nothing
+result of following the instructions below. This project is currently still a work in progress (almost nothing
 works!) and would work only on Carvera Air. DO NOT TRY THIS AT HOME unless you understand what you're doing and are
 willing to deal with the issues and fix the bugs yourself (I might help with that, though).**
 
@@ -10,17 +10,17 @@ by [Makera Inc.](https://www.makera.com/)
 to use [LinuxCNC](https://linuxcnc.org/) as a controller with the help of
 a [Raspberry Pi](https://www.raspberrypi.com/).
 
-It works by offloading the realtime functions (pulsing the motor drivers) to the Carvera board/firmware, while the
-computation-heavy parts (G code parsing, trajectory planning, motion control, etc.) are handled by LinuxCNC running on
+It works by offloading the real-time functions (pulsing the motor drivers) to the Carvera board/firmware, while the
+computation-heavy parts (G-code parsing, trajectory planning, motion control, etc.) are handled by LinuxCNC running on
 the Raspberry Pi. If you're familiar with LinuxCNC concepts, the Carvera board acts as a Programmable Realtime Unit
-(PRU) on BeagleBone or a limited version of a Mesa card.
+(PRU) on a BeagleBone or a limited version of a Mesa card.
 
 I (@f355) don't have the big-brother Carvera (C1), so for now it is supposed to only work (or not) with
 Carvera Air (CA1).
 
-The project has started as a fork of the fantastic [Remora](https://github.com/scottalford75/Remora) project. The Remora
+The project started as a fork of the fantastic [Remora](https://github.com/scottalford75/Remora) project. The Remora
 authors [say they "dont ...not support"](https://github.com/scottalford75/Remora/issues/78#issuecomment-2584956914)
-LPC1768-based boards, so this is a hard-fork, the changes are not intended to be upstreamed, and the code has been
+LPC1768-based boards, so this is a hard-fork; the changes are not intended to be upstreamed, and the code has been
 pretty much rewritten.
 
 ## Making it work (Carvera Air)
@@ -28,20 +28,20 @@ pretty much rewritten.
 The communication between the machine's board and the Raspberry Pi is done over the SPI bus. Unfortunately, both SSP/SPI
 interfaces on the board are populated - SSP0 by the SD card and SSP1 by the ESP8266-based Wi-Fi module. We won't need
 either of those things, so we'll be plugging into the MicroSD port directly using a very cursed-looking cable. It is
-possible to use the WiFi module pins too, but it is much harder since it requires physically modifying the board.
+possible to use the Wi-Fi module pins too, but it is much harder since it requires physically modifying the board.
 
 You'll need the following:
 
 1. Carvera Air itself, obviously.
 2. Raspberry Pi 5 (recommended) or 4B (not well-tested) with a suitable power supply and a MicroSD card.
 3. MicroSD breakout board - a PCB with a MicroSD card shape on one end and solder points/terminals on the other. I used
-   one end of a MicroSD extension cable, they're readily available on the internet. AliExpress has very cheap breakout
+   one end of a MicroSD extension cable; they're readily available on the internet. AliExpress has very cheap breakout
    boards with pin headers, available as "microsd sniffe" (sic, not "sniffer"). Alternatively, you can design the PCB
    yourself and cut it on the Carvera (please share your design if you do).
-4. Dupont 2.54 mm / 0.1"-pitch pin header connectors, female. A single 40-pin connector housing for the Raspberry Pi is
+4. DuPont 2.54 mm / 0.1" pitch pin header connectors, female. A single 40-pin connector housing for the Raspberry Pi is
    recommended to avoid counting pins every time you plug in the cable. If you choose to connect the SWD port, you'll
    need a 5-pin connector as well.
-5. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heatshrink,
+5. Wires to tie it all together, of a suitable gauge, and a way to do that (soldering iron, crimping tool, heat-shrink,
    etc.)
 
 ### Making the cables
@@ -52,11 +52,11 @@ You'll need the following:
 * "Wire color" column is purely informational and refers to the colors on the photos below, feel free to use any colors
   you want.
 * Keep the wires short to minimize interference - 10-15 cm is a good length.
-* Double and triple check when done.
+* Double- and triple-check when done.
 
 #### Connector J13 - SPI
 
-It's the MicroSD port. Required, it's the main communication channel between the machine and LinuxCNC.
+It's the MicroSD port. Required; it's the main communication channel between the machine and LinuxCNC.
 
 Pins are numbered according to the [MicroSD pinout](https://en.wikipedia.org/wiki/SD_card#Transfer_modes) in SPI mode.
 Your breakout board might have extra grounds or even a completely different pinout on the cable side, make sure to
@@ -76,7 +76,7 @@ had extra grounds, and it was more convenient to connect it there.
 
 #### Connector J12 - SWD/Reset
 
-It's a 5-pin Dupont pin header below and to the right of the MCU, used for flashing, resetting and debugging
+It's a 5-pin Dupont pin header below and to the right of the MCU, used for flashing, resetting, and debugging
 the firmware. You can omit it and flash the firmware using an SD card, but it is much more convenient to do it without
 unplugging the cable.
 
@@ -100,23 +100,23 @@ All connected together:
 
 ![connected](img/connected.jpeg)
 
-Please excuse the crudity of the model, I didn't have time to build it to scale or to paint it. Coming up with a way to
+Please excuse the crudity of the model; I didn't have time to build it to scale or to paint it. Coming up with a way to
 permanently mount the Raspberry Pi while providing adequate cooling is left as an exercise to the reader.
 
 ### Building the firmware
 
 Follow the [official Mbed CE instructions](https://mbed-ce.dev/getting-started/toolchain-install/). Use this repo
-instead of the `mbed-ce-hello-world`, `Release` build type and `LPC1768` target.
+instead of the `mbed-ce-hello-world`, with `Release` build type and `LPC1768` target.
 
 If you're doing this on the Raspberry Pi itself, and it is connected to the machine, you can flash the firmware with
 `sudo ninja flash-electrophorus`.
 
-Instead of flashing the firmware through SWD - e.g. if you've chosen to not connect that port - you can rename
+Instead of flashing the firmware through SWD - e.g., if you've chosen to not connect that port - you can rename
 `build/electrophorus.bin` to `firmware.bin` and put it in the root folder of the SD card as usual. The firmware is
 (obviously) not using the SD card at all, so you can leave the rest of the files on it.
 
 We're not touching the bootloader, so to go back to the [stock](https://github.com/MakeraInc/CarveraFirmware/releases)
-or [community](https://github.com/Carvera-Community/Carvera_Community_Firmware/releases) firmware you just need to
+or [community](https://github.com/Carvera-Community/Carvera_Community_Firmware/releases) firmware, you just need to
 download it, rename it to `firmware.bin` and put it on the SD card.
 
 ### Configuring LinuxCNC
