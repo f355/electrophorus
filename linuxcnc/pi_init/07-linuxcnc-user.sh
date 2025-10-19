@@ -13,6 +13,10 @@ ln -s /usr/share/linuxcnc/ncfiles/remap_lib ~/linuxcnc/nc_files/remap_lib
 
 ln -s $PWD/linuxcnc/config/carvera ~/linuxcnc/configs/carvera
 
+cat >>~/linuxcnc/configs/carvera/tool.tbl <<EOF
+T99  P99  D+2.000000 Z+0.000000 ;Touch probe
+EOF
+
 sudo halcompile --install ./linuxcnc/hal_comps/electrophorus.c
 sudo halcompile --install ./linuxcnc/hal_comps/level_map.comp
 sudo halcompile --install ./linuxcnc/hal_comps/probe_helper.comp
