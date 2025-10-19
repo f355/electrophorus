@@ -76,10 +76,11 @@ static bool is_rpi4(void) {
   ssize_t n = read(fd, buf, sizeof(buf));
   close(fd);
   if (n <= 0) return false;
-  /* Look for common Pi4 compatibles */
-  if (memmem(buf, (size_t)n, "raspberrypi,4", 14)) return true;
-  if (memmem(buf, (size_t)n, "raspberrypi,400", 16)) return true;
-  if (memmem(buf, (size_t)n, "raspberrypi,4-compute-module", 29)) return true;
+  // compatible is NUL-separated strings
+  const char *models[] = {"raspberrypi,4", "raspberrypi,400", "raspberrypi,4-compute-module"};
+  for (size_t i = 0; i < sizeof(models) / sizeof(models[0]); i++) {
+    if (memmem(buf, (size_t)n, models[i], strlen(models[i]))) return 1;
+  }
   return false;
 }
 

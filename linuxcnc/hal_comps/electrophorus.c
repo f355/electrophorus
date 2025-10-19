@@ -578,6 +578,6 @@ int rt_peripheral_init(void) {
 
   if (ret5 < 0) rtapi_print_msg(RTAPI_MSG_ERR, "rpi5_spi_init failed (%d).\n", ret5);
   if (ret4 < 0) rtapi_print_msg(RTAPI_MSG_ERR, "rpi4_spi_init failed (%d).\n", ret4);
-  rtapi_print_msg(RTAPI_MSG_ERR, "Error: no SPI driver available (need root/CAP_SYS_RAWIO for /dev/mem).\n");
+  rtapi_print_msg(RTAPI_MSG_ERR, "Error: no SPI driver available. Only Raspberry Pi 4 and 5 families are supported.\n");
   return -1;
 }
