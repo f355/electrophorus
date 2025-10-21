@@ -5,7 +5,7 @@ ADC::ADC(const uint8_t var_number, Pin* pin, SpiComms* comms)
       var_number(var_number),
       adc(new AnalogIn(pin->as_input()->to_pin_name())),
       run_every(100),  // run every 100 calls (0.1 seconds)
-      counter(0) {
+      counter(run_every) {
   // Take a reading to get the ADC up and running before moving on
   this->value = this->adc->read_u16();
 }
