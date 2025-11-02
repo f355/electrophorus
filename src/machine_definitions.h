@@ -8,7 +8,7 @@
 // on LPC1768, the period is shared among all PWMs,
 // so we don't try setting it to different values - the last one wins.
 // many bothans died to bring us this information.
-#define PWM_PERIOD_US 10000  // 10ms/100Hz
+#define PWM_PERIOD_US 2000  // 1ms/1kHz
 
 #define STEPGENS 4
 
