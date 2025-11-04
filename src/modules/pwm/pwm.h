@@ -1,22 +1,18 @@
-#ifndef PWM_H
-#define PWM_H
+#pragma once
 
 #include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
 class PWM final : public Module {
-  SpiComms *comms;
-  uint8_t var_number;
+  uint8_t var_number_;
 
-  PwmOut *pwm_pin;  // PWM out object
+  PwmOut *pwm_pin_;  // PWM out object
 
-  int32_t duty_cycle;  // Pulse width (tenths of %, per mil)
+  int32_t duty_cycle_;  // Pulse width (tenths of %, per mil)
 
  public:
-  PWM(uint8_t var_number, const Pin *pin, SpiComms *comms);
+  PWM(uint8_t var_number, const Pin *pin);
 
-  void on_rx() override;
+  void OnRx() override;
 };
-
-#endif

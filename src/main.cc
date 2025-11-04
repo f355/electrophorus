@@ -27,7 +27,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 [[noreturn]] int main() {
   printf("\nelectrophorus booting up...\n");
 
-  machine_init();
+  MachineInit();
 
   // set the interrupt priorities
   NVIC_SetPriority(TIMER0_IRQn, 0);  // stepgen ticker
@@ -35,27 +35,28 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
   NVIC_SetPriority(EINT3_IRQn, 2);   // GPIO - PulseCounter, eStop
   NVIC_SetPriority(PendSV_IRQn, 3);  // RxListener
 
-  printf("initializing SPI...\n");
-  const auto comms = new SpiComms();
-  printf("SPI initialized.\n");
-
-  const auto modules = machine_modules(comms);
+  const auto modules = MachineModules();
 
   printf("initializing stepgen ticker...\n");
-  const auto stepgen_ticker = StepgenTicker::instance();
-  stepgen_ticker->register_modules(modules);
-  stepgen_ticker->start();
+  const auto stepgen_ticker = StepgenTicker::Instance();
+  stepgen_ticker->RegisterModules(modules);
+  stepgen_ticker->Start();
   printf("stepgen ticker initialized.\n");
 
   printf("initializing receive listener...\n");
-  RxListener::instance()->register_modules(modules);
-  RxListener::start();
+  RxListener::Instance()->RegisterModules(modules);
+  RxListener::Start();
   printf("receive listener initialized.\n");
 
   // take the initial input readings and write zeros to the outputs
-  RxListener::handle_interrupt();
+  RxListener::HandleRx();
+
+  printf("initializing SPI...\n");
+  const auto comms = SpiComms::Instance();
+  comms->Start();
+  printf("SPI initialized.\n");
 
   Watchdog::get_instance().start(2000);
 
-  comms->loop();
+  comms->Loop();
 }

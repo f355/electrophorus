@@ -1,10 +1,9 @@
 #include "pulse_counter.h"
 
-PulseCounter::PulseCounter(const uint8_t var_number, const Pin* pin, SpiComms* comms)
-    : comms(comms), var_number(var_number) {
-  (new InterruptIn(pin->to_pin_name()))->rise(callback(this, &PulseCounter::interrupt_handler));
+PulseCounter::PulseCounter(const uint8_t var_number, const Pin* pin) : var_number_(var_number) {
+  (new InterruptIn(pin->ToPinName()))->rise(callback(this, &PulseCounter::InterruptHandler));
 }
 
-void PulseCounter::on_rx() { this->comms->get_pru_state()->input_vars[this->var_number] = this->counter; }
+void PulseCounter::OnRx() { SpiComms::Instance()->get_pru_state()->input_vars[var_number_] = counter_; }
 
-void PulseCounter::interrupt_handler() { this->counter++; }
+void PulseCounter::InterruptHandler() { counter_++; }

@@ -1,45 +1,47 @@
-#ifndef COMMS_H
-#define COMMS_H
+#pragma once
 
 #include "MODDMA.h"
 #include "mbed.h"
-#include "spi_protocol.h"
+#include "spi_protocol/spi_protocol.h"
 
 class SpiComms {
-  MODDMA dma;
+  MODDMA dma_;
 
-  MODDMA_Config* rx_dma1;
-  MODDMA_Config* rx_dma2;
-  MODDMA_Config* tx_dma;
-  MODDMA_LLI tx_lli;
+  MODDMA_Config rx_dma1_{};
+  MODDMA_Config rx_dma2_{};
+  MODDMA_Config tx_dma_{};
+  MODDMA_LLI tx_lli_{};
 
-  linuxCncState_t temp_rx_buffer1{};
-  linuxCncState_t temp_rx_buffer2{};
+  SpiBuffer<LinuxCncState> rx_buffer1_{};
+  SpiBuffer<LinuxCncState> rx_buffer2_{};
 
-  volatile linuxCncState_t* linuxcnc_state = &temp_rx_buffer2;
-  volatile pruState_t pru_state{};
+  volatile LinuxCncState* linuxcnc_state = &rx_buffer2_.AsStruct();
 
-  uint8_t reject_count = 0;
-  volatile bool data_ready = false;
-  volatile bool spi_error = false;
+  SpiBuffer<PruState> tx_buffer_{};
 
-  void rx1_callback();
-  void rx2_callback();
-  void err_callback();
+  uint8_t reject_count_ = 0;
+  volatile bool data_ready_ = false;
+  volatile bool spi_error_ = false;
 
-  void rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config* other_rx);
+  void Rx1Callback() { RxCallbackImpl(rx_buffer1_.AsStruct(), rx_dma2_); }
+  void Rx2Callback() { RxCallbackImpl(rx_buffer2_.AsStruct(), rx_dma1_); }
+  void ErrCallback() { error("DMA error on channel %d!\n", dma_.irqProcessingChannel()); }
 
- public:
+  void RxCallbackImpl(const LinuxCncState& rx_buffer, MODDMA_Config& other_rx);
+
   SpiComms();
 
-  static void data_ready_callback();
+ public:
+  static SpiComms* Instance();
+  void Start();
 
-  [[nodiscard]] volatile linuxCncState_t* get_linuxcnc_state() const;
-  [[nodiscard]] volatile pruState_t* get_pru_state();
+  [[nodiscard]] volatile LinuxCncState* get_linuxcnc_state() const {
+    static LinuxCncState empty{};
+    return e_stop_active_ ? &empty : linuxcnc_state;
+  }
+  [[nodiscard]] volatile PruState* get_pru_state() { return &tx_buffer_.AsStruct(); }
 
-  volatile bool e_stop_active = false;
+  volatile bool e_stop_active_ = false;
 
-  [[noreturn]] void loop();
+  [[noreturn]] void Loop();
 };
-
-#endif

@@ -1,22 +1,16 @@
-#ifndef E_STOP_H
-#define E_STOP_H
+#pragma once
 
 #include "modules/module.h"
 #include "pin.h"
-#include "spi_comms.h"
 
 class EStop final : public Module {
-  SpiComms* comms;
+  bool normally_closed_ = false;
 
-  bool normally_closed = false;
-
-  void rise_handler() const;
-  void fall_handler() const;
-  void engaged() const;
-  void disengaged() const;
+  void RiseHandler() const;
+  void FallHandler() const;
+  static void Engaged();
+  static void Disengaged();
 
  public:
-  EStop(const Pin* pin, SpiComms* comms);
+  explicit EStop(const Pin* pin);
 };
-
-#endif

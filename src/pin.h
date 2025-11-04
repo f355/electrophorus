@@ -1,53 +1,44 @@
-#ifndef PIN_H
-#define PIN_H
+#pragma once
 
 #include "LPC17xx.h"
 #include "mbed.h"
 
-#define NUM_PORTS 5
-
-extern LPC_GPIO_TypeDef* gpio_ports[NUM_PORTS];
-
 class Pin {
  public:
+  static LPC_GPIO_TypeDef* GetGpioPort(const uint8_t port_number) {
+    static LPC_GPIO_TypeDef* gpio_ports[5] = {LPC_GPIO0, LPC_GPIO1, LPC_GPIO2, LPC_GPIO3, LPC_GPIO4};
+    return gpio_ports[port_number];
+  }
+
   Pin(unsigned char port, unsigned char pin);
 
-  Pin* as_output() {
-    this->port->FIODIR |= 1 << this->pin;
-    return this;
-  }
+  Pin* AsOutput();
 
-  Pin* as_input() {
-    this->port->FIODIR &= ~(1 << this->pin);
-    return this;
-  }
+  Pin* AsInput();
 
-  bool inverting;
+  bool inverting_;
 
-  Pin* invert() {
-    this->inverting = true;
-    return this;
-  };
+  Pin* Invert();
 
-  [[nodiscard]] bool get() const { return this->inverting ^ ((this->port->FIOPIN >> this->pin) & 1); }
+  [[nodiscard]] bool Get() const { return inverting_ ^ ((port_->FIOPIN >> pin_) & 1); };
 
-  void set(const bool value) const {
-    if (this->inverting ^ value)
-      this->port->FIOSET = 1 << this->pin;
+  void Set(const bool value) const {
+    if (inverting_ ^ value)
+      port_->FIOSET = 1 << pin_;
     else
-      this->port->FIOCLR = 1 << this->pin;
+      port_->FIOCLR = 1 << pin_;
   }
 
-  [[nodiscard]] PinName to_pin_name() const;
+  [[nodiscard]] PinName ToPinName() const;
 
  private:
-  LPC_GPIO_TypeDef* port;
+  LPC_GPIO_TypeDef* port_;
 
-  uint8_t pin;
-  uint8_t port_number;
+  uint8_t pin_;
+  uint8_t port_number_;
 };
 
-inline void set_pull_down(const uint8_t port_number, const uint8_t pin) {
+inline void SetPullDown(const uint8_t port_number, const uint8_t pin) {
   if (port_number == 0 && pin < 16) {
     LPC_PINCON->PINMODE0 |= (3 << (pin * 2));
   }
@@ -70,5 +61,3 @@ inline void set_pull_down(const uint8_t port_number, const uint8_t pin) {
     LPC_PINCON->PINMODE9 |= (3 << ((pin - 16) * 2));
   }
 }
-
-#endif

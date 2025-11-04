@@ -42,7 +42,7 @@ add_executable(${PROJECT_NAME}
         src/stepgen_ticker.cc
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC . src include)
+target_include_directories(${PROJECT_NAME} PUBLIC . src linuxcnc/hal_comps)
 
 target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
 

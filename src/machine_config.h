@@ -1,11 +1,8 @@
-#ifndef MACHINECONFIG_H
-#define MACHINECONFIG_H
+#pragma once
 
 #include "modules/module.h"
 #include "spi_comms.h"
 
-void machine_init();
+void MachineInit();
 
-vector<Module*> machine_modules(SpiComms* comms);
-
-#endif
+vector<Module*> MachineModules();

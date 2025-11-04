@@ -1,19 +1,18 @@
 #include "adc.h"
 
-ADC::ADC(const uint8_t var_number, Pin* pin, SpiComms* comms)
-    : comms(comms),
-      var_number(var_number),
-      adc(new AnalogIn(pin->as_input()->to_pin_name())),
-      run_every(100),  // run every 100 calls (0.1 seconds)
-      counter(run_every) {
+ADC::ADC(const uint8_t var_number, Pin* pin)
+    : var_number_(var_number),
+      adc_(new AnalogIn(pin->AsInput()->ToPinName())),
+      run_every_(100),  // run every 100 calls (0.1 seconds)
+      counter_(run_every_) {
   // Take a reading to get the ADC up and running before moving on
-  this->value = this->adc->read_u16();
+  value_ = adc_->read_u16();
 }
 
-void ADC::on_rx() {
-  if (--this->counter == 0) {
-    this->counter = run_every;
-    this->value = this->adc->read_u16();
+void ADC::OnRx() {
+  if (--counter_ == 0) {
+    counter_ = run_every_;
+    value_ = adc_->read_u16();
   }
-  this->comms->get_pru_state()->input_vars[var_number] = this->value;
+  SpiComms::Instance()->get_pru_state()->input_vars[var_number_] = value_;
 }

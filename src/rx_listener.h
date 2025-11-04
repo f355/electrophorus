@@ -1,23 +1,25 @@
-#ifndef EPHO_RX_LISTENER_H
-#define EPHO_RX_LISTENER_H
+#pragma once
 
 #include <vector>
 
+#include "LPC17xx.h"
 #include "modules/module.h"
 
 class RxListener final {
-  std::vector<Module*> modules;
+  std::vector<Module*> modules_;
 
  public:
   RxListener();
 
-  static void start();
+  static void Start();
 
-  static RxListener* instance();
+  static RxListener* Instance();
 
-  static void handle_interrupt();
+  void RegisterModules(const std::vector<Module*>& ms);
 
-  void register_modules(const std::vector<Module*>& ms);
+  static void HandleRx();
+
+  static void HandleRxDeferred() {
+    SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;  // trigger PendSV IRQ to signal that the data is ready
+  }
 };
-
-#endif  // EPHO_RX_LISTENER_H

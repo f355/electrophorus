@@ -1,39 +1,38 @@
 #include "e_stop.h"
 
-EStop::EStop(const Pin* pin, SpiComms* comms) : comms(comms), normally_closed(pin->inverting) {
-  const auto irqPin = new InterruptIn(pin->to_pin_name());
-  irqPin->rise(callback(this, &EStop::rise_handler));
-  irqPin->fall(callback(this, &EStop::fall_handler));
-  if (pin->get()) {
-    this->engaged();
+#include "rx_listener.h"
+#include "spi_comms.h"
+
+EStop::EStop(const Pin* pin) : normally_closed_(pin->inverting_) {
+  const auto irqPin = new InterruptIn(pin->ToPinName());
+  irqPin->rise(callback(this, &EStop::RiseHandler));
+  irqPin->fall(callback(this, &EStop::FallHandler));
+  if (pin->Get()) {
+    Engaged();
   }
 }
 
-void EStop::rise_handler() const {
-  if (this->normally_closed) {
-    this->disengaged();
+void EStop::RiseHandler() const {
+  if (normally_closed_) {
+    Disengaged();
   } else {
-    this->engaged();
+    Engaged();
   }
 }
 
-void EStop::fall_handler() const {
-  if (this->normally_closed) {
-    this->engaged();
+void EStop::FallHandler() const {
+  if (normally_closed_) {
+    Engaged();
   } else {
-    this->disengaged();
+    Disengaged();
   }
 }
 
 // ReSharper disable once CppDFAUnreachableFunctionCall
-void EStop::engaged() const {
-  this->comms->e_stop_active = true;
-  // kill the steppers
-  for (volatile auto& i : this->comms->get_linuxcnc_state()->steps_per_tick_cmd) i = 0;
-  // kill the spindle (assumes the spindle speed is the first output_var)
-  this->comms->get_linuxcnc_state()->output_vars[0] = 0;
-  SpiComms::data_ready_callback();
+void EStop::Engaged() {
+  SpiComms::Instance()->e_stop_active_ = true;
+  RxListener::HandleRxDeferred();
 }
 
 // ReSharper disable once CppDFAUnreachableFunctionCall
-void EStop::disengaged() const { this->comms->e_stop_active = false; }
+void EStop::Disengaged() { SpiComms::Instance()->e_stop_active_ = false; }
