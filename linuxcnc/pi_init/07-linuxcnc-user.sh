@@ -17,6 +17,4 @@ cat >>~/linuxcnc/configs/carvera/tool.tbl <<EOF
 T99  P99  D+2.000000 Z+0.000000 ;Touch probe
 EOF
 
-sudo halcompile --install ./linuxcnc/hal_comps/electrophorus.c
-sudo halcompile --install ./linuxcnc/hal_comps/level_map.comp
-sudo halcompile --install ./linuxcnc/hal_comps/probe_helper.comp
+./linuxcnc/hal_comps/build_and_install.sh
