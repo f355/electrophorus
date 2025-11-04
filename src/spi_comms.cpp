@@ -15,39 +15,39 @@ SpiComms::SpiComms()
   new SPISlave(SPI_MOSI, SPI_MISO, SPI_SCK, SPI_SSEL);
 
   // Build TX LLI first (cyclic)
-  this->tx_lli.srcAddr(reinterpret_cast<uint32_t>(&pru_state))
+  this->tx_lli.srcAddr(reinterpret_cast<uint32_t>(tx_buffer.bytes))
       ->dstAddr(reinterpret_cast<uint32_t>(&LPC_SSP0->DR))
-      ->control(dma.CxControl_TransferSize(SPI_BUF_SIZE) | dma.CxControl_SBSize(MODDMA::_4) |
+      ->control(dma.CxControl_TransferSize(tx_buffer.size()) | dma.CxControl_SBSize(MODDMA::_4) |
                 dma.CxControl_DBSize(MODDMA::_4) | dma.CxControl_SWidth(MODDMA::byte) |
                 dma.CxControl_DWidth(MODDMA::byte) | dma.CxControl_SI())
       ->nextLLI(reinterpret_cast<uint32_t>(&this->tx_lli));
 
   tx_dma->channelNum(MODDMA::Channel_0)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(&pru_state))
-      ->transferSize(SPI_BUF_SIZE)
+      ->srcMemAddr(reinterpret_cast<uint32_t>(tx_buffer.bytes))
+      ->transferSize(tx_buffer.size())
       ->transferType(MODDMA::m2p)
       ->dstConn(MODDMA::SSP0_Tx)
       ->dmaLLI(reinterpret_cast<uint32_t>(&this->tx_lli))
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma1->channelNum(MODDMA::Channel_2)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer1))
-      ->transferSize(SPI_BUF_SIZE)
+      ->dstMemAddr(reinterpret_cast<uint32_t>(rx_buffer1.bytes))
+      ->transferSize(rx_buffer1.size())
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
       ->attach_tc(this, &SpiComms::rx1_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   rx_dma2->channelNum(MODDMA::Channel_3)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(&temp_rx_buffer2))
-      ->transferSize(SPI_BUF_SIZE)
+      ->dstMemAddr(reinterpret_cast<uint32_t>(rx_buffer2.bytes))
+      ->transferSize(rx_buffer2.size())
       ->transferType(MODDMA::p2m)
       ->srcConn(MODDMA::SSP0_Rx)
       ->attach_tc(this, &SpiComms::rx2_callback)
       ->attach_err(this, &SpiComms::err_callback);
 
   // Initialize PRU->host packet counter
-  this->pru_state.packet_counter = PRU_INIT_PKT;
+  this->tx_buffer.state().packet_counter = PRU_INIT_PKT;
 
   dma.Prepare(rx_dma1);
   dma.Prepare(tx_dma);
@@ -60,38 +60,38 @@ SpiComms::SpiComms()
   LPC_SSP0->DMACR = 1 << 1 | 1 << 0;  // TX,RX DMA Enable
 }
 
-void SpiComms::rx1_callback() { this->rx_callback_impl(this->temp_rx_buffer1, this->rx_dma2); }
+void SpiComms::rx1_callback() { this->rx_callback_impl(rx_buffer1.state(), this->rx_dma2); }
 
-void SpiComms::rx2_callback() { this->rx_callback_impl(this->temp_rx_buffer2, this->rx_dma1); }
+void SpiComms::rx2_callback() { this->rx_callback_impl(rx_buffer2.state(), this->rx_dma1); }
 
 void SpiComms::data_ready_callback() {
   // trigger PendSV IRQ to signal that the data is ready
   SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 }
 
-volatile linuxCncState_t* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
-volatile pruState_t* SpiComms::get_pru_state() { return &this->pru_state; }
+volatile LinuxCncState* SpiComms::get_linuxcnc_state() const { return this->linuxcnc_state; }
+volatile PruState* SpiComms::get_pru_state() { return &this->tx_buffer.state(); }
 
 // ReSharper disable once CppDFAUnreachableFunctionCall
-void SpiComms::rx_callback_impl(const linuxCncState_t& rx_buffer, MODDMA_Config* other_rx) {
+void SpiComms::rx_callback_impl(const LinuxCncState& rx_buffer, MODDMA_Config* other_rx) {
   dma.Disable(dma.irqProcessingChannel());
   dma.clearTcIrq();
 
   // Check and move the received SPI data payload
   switch (rx_buffer.command) {
-    case PRU_READ:
+    case SpiCommand::Read:
       // Increment packet counter for the next reply
-      this->pru_state.packet_counter++;
+      this->tx_buffer.state().packet_counter++;
       data_ready = true;
       reject_count = 0;
       break;
 
-    case PRU_WRITE:
+    case SpiCommand::Write:
       data_ready = true;
       reject_count = 0;
       // don't copy the linuxcnc_state if the e-stop button is pressed
       if (!this->e_stop_active) {
-        this->linuxcnc_state = const_cast<linuxCncState_t*>(&rx_buffer);
+        this->linuxcnc_state = const_cast<LinuxCncState*>(&rx_buffer);
         data_ready_callback();
       }
       break;
@@ -170,7 +170,9 @@ void SpiComms::loop() {
 
         // set the whole rxData buffer to 0
         // can't memset volatile memory, so use a loop instead
-        for (volatile uint8_t& b : this->linuxcnc_state->buffer) b = 0;
+        for (std::uint32_t i = 0; i < sizeof(LinuxCncState); ++i) {
+          reinterpret_cast<volatile std::uint8_t*>(this->linuxcnc_state)[i] = 0;
+        }
         data_ready_callback();
 
         current_state = ST_IDLE;
@@ -179,7 +181,3 @@ void SpiComms::loop() {
     wait_us(1000);
   }
 }
-
-static_assert(sizeof(linuxCncState_t) == sizeof(pruState_t), "rx and tx buffer size mismatch!");
-static_assert(sizeof(linuxCncState_t) <= SPI_BUF_SIZE, "rx buffer too small!");
-static_assert(sizeof(pruState_t) <= SPI_BUF_SIZE, "tx buffer too small!");
