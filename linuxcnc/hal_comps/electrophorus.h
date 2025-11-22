@@ -5,8 +5,8 @@
 #include "../../src/spi_protocol.h"
 #include "hal.h"
 #include "rtapi.h"
-#include "spi/spi_driver.hpp"
-#include "stepgen/stepgen.hpp"
+#include "spi/spi_driver.h"
+#include "stepgen/stepgen.h"
 
 class Electrophorus {
  public:

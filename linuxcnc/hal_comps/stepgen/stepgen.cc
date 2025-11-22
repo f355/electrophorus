@@ -1,4 +1,4 @@
-#include "stepgen.hpp"
+#include "stepgen.h"
 
 #include <algorithm>
 #include <cmath>

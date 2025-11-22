@@ -27,19 +27,19 @@ add_subdirectory(mbed-os)
 add_subdirectory(lib/MODDMA)
 
 add_executable(${PROJECT_NAME}
-        src/machine_config.cpp
-        src/main.cpp
-        src/modules/adc/adc.cpp
-        src/modules/e_stop/e_stop.cpp
-        src/modules/gpio/digital_ins.cpp
-        src/modules/gpio/digital_outs.cpp
-        src/modules/gpio/pulse_counter.cpp
-        src/modules/pwm/pwm.cpp
-        src/modules/stepgen/stepgen.cpp
-        src/pin.cpp
-        src/rx_listener.cpp
-        src/spi_comms.cpp
-        src/stepgen_ticker.cpp
+        src/machine_config.cc
+        src/main.cc
+        src/modules/adc/adc.cc
+        src/modules/e_stop/e_stop.cc
+        src/modules/gpio/digital_ins.cc
+        src/modules/gpio/digital_outs.cc
+        src/modules/gpio/pulse_counter.cc
+        src/modules/pwm/pwm.cc
+        src/modules/stepgen/stepgen.cc
+        src/pin.cc
+        src/rx_listener.cc
+        src/spi_comms.cc
+        src/stepgen_ticker.cc
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src include)

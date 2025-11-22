@@ -1,4 +1,4 @@
-#include "electrophorus.hpp"
+#include "electrophorus.h"
 
 #include "rtapi_app.h"
 

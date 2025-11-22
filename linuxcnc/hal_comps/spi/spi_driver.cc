@@ -1,4 +1,4 @@
-#include "spi_driver.hpp"
+#include "spi_driver.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -6,8 +6,8 @@
 #include <cstring>
 #include <memory>
 
-#include "rpi4_spi_driver.hpp"
-#include "rpi5_spi_driver.hpp"
+#include "rpi4_spi_driver.h"
+#include "rpi5_spi_driver.h"
 
 uint32_t SpiDriver::rd32(volatile void* base, const uint32_t off) {
   return *reinterpret_cast<volatile uint32_t*>(static_cast<volatile uint8_t*>(base) + off);

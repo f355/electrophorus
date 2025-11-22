@@ -18,7 +18,7 @@ endif ()
 
 # Build an OBJECT library so we can mirror halcompile's version-script flow
 add_library(${COMPONENT_NAME}_objs OBJECT
-        electrophorus.cpp
+        electrophorus.cc
 )
 
 # Align compile flags/defs with halcompile Makefile.modinc (uspace)
@@ -68,10 +68,10 @@ endif ()
 # Realtime module target
 add_library(${COMPONENT_NAME} MODULE
         $<TARGET_OBJECTS:${COMPONENT_NAME}_objs>
-        stepgen/stepgen.cpp
-        spi/spi_driver.cpp
-        spi/rpi4_spi_driver.cpp
-        spi/rpi5_spi_driver.cpp
+        stepgen/stepgen.cc
+        spi/spi_driver.cc
+        spi/rpi4_spi_driver.cc
+        spi/rpi5_spi_driver.cc
 )
 
 

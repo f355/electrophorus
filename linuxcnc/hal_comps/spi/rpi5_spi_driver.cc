@@ -1,4 +1,4 @@
-#include "rpi5_spi_driver.hpp"
+#include "rpi5_spi_driver.h"
 
 #include <fcntl.h>
 #include <sys/mman.h>
