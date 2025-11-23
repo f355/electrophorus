@@ -21,7 +21,27 @@ Carvera Air (CA1).
 The project started as a fork of the fantastic [Remora](https://github.com/scottalford75/Remora) project. The Remora
 authors [say they "dont ...not support"](https://github.com/scottalford75/Remora/issues/78#issuecomment-2584956914)
 LPC1768-based boards, so this is a hard-fork; the changes are not intended to be upstreamed, and the code has been
-pretty much rewritten.
+rewritten almost completely.
+
+## Current status
+
+### What works
+
+* 3-axis linear motion with homing, limits, and stall alarms
+* Spindle with feedback and stall alarm
+* Probing, including TLO measurement on tool changes
+* E-stop
+* XHC WHB04B MPG pendant
+* Temperature-based fan control for the case and the spindle fans
+* Work light
+
+### What doesn't work
+
+* Machines other than Carvera Air (CA1)
+* Rotary axis (no blockers, just needs to be configured)
+* Main button, lid sensor, EXT port, beeper - the support is in place, they're just not used for anything
+* LED strip (the implementation is somewhat involved, so it is deemed low-priority)
+* X-axis flex compensation (not even started)
 
 ## Wiring (Carvera Air)
 
