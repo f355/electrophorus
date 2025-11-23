@@ -10,7 +10,7 @@ curl -sS https://repository.qtpyvcp.com/repo/kcjengr.key | gpg --dearmor >/etc/a
 curl -sS https://gnipsel.com/flexgui/apt-repo/pgp-key.public >/etc/apt/trusted.gpg.d/flexgui.asc
 
 cat >/etc/apt/sources.list.d/linuxcnc.list <<EOF
-#deb [arch=arm64] https://www.linuxcnc.org/ trixie base 2.9-uspace
+deb [arch=arm64] https://www.linuxcnc.org/ trixie base 2.9-uspace
 deb [arch=arm64] https://repository.qtpyvcp.com/apt develop main
 deb [arch=arm64] https://gnipsel.com/flexgui/apt-repo stable main
 EOF
