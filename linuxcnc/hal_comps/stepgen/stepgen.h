@@ -7,10 +7,10 @@
 class Stepgen {
  public:
   Stepgen() = default;
-  int init(int comp_id, const char *modname, const char *prefix, int i);
-  void update(double period_s, LinuxCncState *linuxcnc_state);
-  void apply_feedback(const PruState *pru_state);
-  void reset_prev_feedback(const PruState *pru_state);
+  int Init(int comp_id, const char *modname, const char *prefix, int i);
+  void Update(double period_s, LinuxCncState *linuxcnc_state);
+  void ApplyFeedback(const PruState *pru_state);
+  void ResetPrevFeedback(const PruState *pru_state);
 
  private:
   struct Pins {
@@ -29,12 +29,12 @@ class Stepgen {
     hal_float_t maxaccel;
   };
 
-  Pins *pin = nullptr;
-  Params *param = nullptr;
+  Pins *pin_ = nullptr;
+  Params *param_ = nullptr;
 
-  int index = 0;
-  double old_position_cmd = 0.0;
-  int32_t prev_feedback = 0;
+  int index_ = 0;
+  double old_position_cmd_ = 0.0;
+  int32_t prev_feedback_ = 0;
 
-  double position_control(double period_s);
+  double PositionControl(double period_s);
 };

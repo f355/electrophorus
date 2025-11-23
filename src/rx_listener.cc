@@ -1,25 +1,24 @@
 #include "rx_listener.h"
 
 #include "LPC17xx.h"
-#include "machine_definitions.h"
 
 RxListener::RxListener() = default;
 
-void RxListener::start() {
+void RxListener::Start() {
   constexpr auto irq = PendSV_IRQn;
-  NVIC_SetVector(irq, reinterpret_cast<uint32_t>(&RxListener::handle_interrupt));
+  NVIC_SetVector(irq, reinterpret_cast<uint32_t>(&RxListener::HandleInterrupt));
   NVIC_EnableIRQ(irq);
 }
 
-RxListener* RxListener::instance() {
+RxListener* RxListener::Instance() {
   static RxListener instance;
   return &instance;
 }
 
-void RxListener::handle_interrupt() {
-  for (const auto m : instance()->modules) m->on_rx();
+void RxListener::HandleInterrupt() {
+  for (const auto m : Instance()->modules_) m->OnRx();
 }
 
-void RxListener::register_modules(const std::vector<Module*>& ms) {
-  for (auto m : ms) this->modules.push_back(m);
+void RxListener::RegisterModules(const std::vector<Module*>& ms) {
+  for (auto m : ms) modules_.push_back(m);
 }

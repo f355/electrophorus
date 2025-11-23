@@ -2,11 +2,24 @@
 
 #include "port_api.h"
 
-LPC_GPIO_TypeDef* gpio_ports[NUM_PORTS] = {LPC_GPIO0, LPC_GPIO1, LPC_GPIO2, LPC_GPIO3, LPC_GPIO4};
-
-Pin::Pin(const unsigned char port, const unsigned char pin) : inverting(false), pin(pin), port_number(port) {
-  this->port = gpio_ports[port];
-  this->port->FIOMASK &= ~(1 << this->pin);
+Pin::Pin(const unsigned char port, const unsigned char pin) : inverting_(false), pin_(pin), port_number_(port) {
+  port_ = GetGpioPort(port);
+  port_->FIOMASK &= ~(1 << pin_);
 }
 
-PinName Pin::to_pin_name() const { return port_pin(static_cast<PortName>(port_number), pin); }
+Pin* Pin::AsOutput() {
+  port_->FIODIR |= 1 << pin_;
+  return this;
+}
+
+Pin* Pin::AsInput() {
+  port_->FIODIR &= ~(1 << pin_);
+  return this;
+}
+
+Pin* Pin::Invert() {
+  inverting_ = true;
+  return this;
+}
+
+PinName Pin::ToPinName() const { return port_pin(static_cast<PortName>(port_number_), pin_); }

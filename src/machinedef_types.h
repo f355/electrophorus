@@ -1,5 +1,4 @@
-#ifndef MACHINEDEF_TYPES_H
-#define MACHINEDEF_TYPES_H
+#pragma once
 
 typedef struct {
   const char *name;
@@ -15,5 +14,3 @@ typedef struct {
   uint8_t pin;
   bool invert;
 } outputPin_t;
-
-#endif

@@ -1,46 +1,51 @@
-#ifndef COMMS_H
-#define COMMS_H
+#pragma once
 
 #include "MODDMA.h"
 #include "mbed.h"
 #include "spi_protocol.h"
 
 class SpiComms {
-  MODDMA dma;
+  MODDMA dma_;
 
-  MODDMA_Config* rx_dma1;
-  MODDMA_Config* rx_dma2;
-  MODDMA_Config* tx_dma;
-  MODDMA_LLI tx_lli;
+  MODDMA_Config rx_dma1_{};
+  MODDMA_Config rx_dma2_{};
+  MODDMA_Config tx_dma_{};
+  MODDMA_LLI tx_lli_{};
 
-  SpiBuffer<LinuxCncState> rx_buffer1{};
-  SpiBuffer<LinuxCncState> rx_buffer2{};
+  SpiBuffer<LinuxCncState> rx_buffer1_{};
+  SpiBuffer<LinuxCncState> rx_buffer2_{};
 
-  volatile LinuxCncState* linuxcnc_state = &rx_buffer2.state();
+  volatile LinuxCncState* linuxcnc_state = &rx_buffer2_.AsStruct();
 
-  SpiBuffer<PruState> tx_buffer{};
+  SpiBuffer<PruState> tx_buffer_{};
 
-  uint8_t reject_count = 0;
-  volatile bool data_ready = false;
-  volatile bool spi_error = false;
+  uint8_t reject_count_ = 0;
+  volatile bool data_ready_ = false;
+  volatile bool spi_error_ = false;
 
-  void rx1_callback();
-  void rx2_callback();
-  void err_callback();
+  void Rx1Callback() { RxCallbackImpl(rx_buffer1_.AsStruct(), rx_dma2_); }
+  void Rx2Callback() { RxCallbackImpl(rx_buffer2_.AsStruct(), rx_dma1_); }
+  void ErrCallback() { error("DMA error on channel %d!\n", dma_.irqProcessingChannel()); }
 
-  void rx_callback_impl(const LinuxCncState& rx_buffer, MODDMA_Config* other_rx);
+  void RxCallbackImpl(const LinuxCncState& rx_buffer, MODDMA_Config& other_rx);
 
- public:
   SpiComms();
 
-  static void data_ready_callback();
+ public:
+  static SpiComms* Instance();
+  void Start();
 
-  [[nodiscard]] volatile LinuxCncState* get_linuxcnc_state() const;
-  [[nodiscard]] volatile PruState* get_pru_state();
+  static void SignalDataReady() {
+    SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;  // trigger PendSV IRQ to signal that the data is ready
+  }
 
-  volatile bool e_stop_active = false;
+  [[nodiscard]] volatile LinuxCncState* get_linuxcnc_state() const {
+    static LinuxCncState empty{};
+    return e_stop_active_ ? &empty : linuxcnc_state;
+  }
+  [[nodiscard]] volatile PruState* get_pru_state() { return &tx_buffer_.AsStruct(); }
 
-  [[noreturn]] void loop();
+  volatile bool e_stop_active_ = false;
+
+  [[noreturn]] void Loop();
 };
-
-#endif

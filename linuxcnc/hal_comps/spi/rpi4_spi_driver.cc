@@ -37,39 +37,39 @@ static uint32_t fsel_shift(const uint32_t p) { return 3u * (p % 10u); }
 static uint32_t fsel_mask(const uint32_t p) { return 7u << fsel_shift(p); }
 static uint32_t fsel_alt0(const uint32_t p) { return 4u << fsel_shift(p); }
 
-int Rpi4SpiDriver::init(int frequency_hz) {
-  if (!compat_contains_any({
+int Rpi4SpiDriver::Init(int frequency_hz) {
+  if (!CompatContainsAny({
           "raspberrypi,4",
           "raspberrypi,400",
           "raspberrypi,4-compute-module",
       }))
     return 0;  // not supported on this machine
 
-  mem_fd = rtapi_open_as_root("/dev/mem", O_RDWR | O_SYNC);
-  if (mem_fd < 0) return -errno;
+  mem_fd_ = rtapi_open_as_root("/dev/mem", O_RDWR | O_SYNC);
+  if (mem_fd_ < 0) return -errno;
 
-  bar = static_cast<volatile uint8_t*>(
-      mmap(nullptr, BCM_PERI_MAP_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, BCM2711_PERI_BASE));
-  if (bar == MAP_FAILED) {
+  bar_ = static_cast<volatile uint8_t*>(
+      mmap(nullptr, BCM_PERI_MAP_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd_, BCM2711_PERI_BASE));
+  if (bar_ == MAP_FAILED) {
     const int e = -errno;
-    close(mem_fd);
-    mem_fd = -1;
+    close(mem_fd_);
+    mem_fd_ = -1;
     return e;
   }
 
-  gpio = bar + GPIO_OFFSET;
-  spi0 = bar + SPI0_OFFSET;
+  gpio_ = bar_ + GPIO_OFFSET;
+  spi0_ = bar_ + SPI0_OFFSET;
 
   // GPIO8..11 -> ALT0 for SPI0 (CE0, MISO, MOSI, SCLK)
-  uint32_t v0 = rd32(gpio, GPFSEL0);
+  uint32_t v0 = Read(gpio_, GPFSEL0);
   v0 &= ~(fsel_mask(8) | fsel_mask(9));
   v0 |= (fsel_alt0(8) | fsel_alt0(9));
-  wr32(gpio, GPFSEL0, v0);
+  Write(gpio_, GPFSEL0, v0);
 
-  uint32_t v1 = rd32(gpio, GPFSEL1);
+  uint32_t v1 = Read(gpio_, GPFSEL1);
   v1 &= ~(fsel_mask(10) | fsel_mask(11));
   v1 |= (fsel_alt0(10) | fsel_alt0(11));
-  wr32(gpio, GPFSEL1, v1);
+  Write(gpio_, GPFSEL1, v1);
 
   // SPI mode 1, 8-bit, clear FIFOs, set clock
   uint32_t cs = 0;
@@ -77,37 +77,37 @@ int Rpi4SpiDriver::init(int frequency_hz) {
   cs &= ~SPI0_CS_CPOL;
   cs &= ~SPI0_CS_CS_MASK;  // CS0
   cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
-  wr32(spi0, SPI0_CS, cs);
+  Write(spi0_, SPI0_CS, cs);
 
   if (frequency_hz <= 0) frequency_hz = 5'000'000;
   uint32_t div = 250000000u / static_cast<uint32_t>(frequency_hz);
   if (div & 1u) ++div;
   if (div < 2u) div = 2u;
-  wr32(spi0, SPI0_CLK, div);
+  Write(spi0_, SPI0_CLK, div);
   return 1;
 }
 
-void Rpi4SpiDriver::xfer(uint8_t* rx, const uint8_t* tx, const size_t len) {
-  if (!spi0) return;
+void Rpi4SpiDriver::Xfer(uint8_t* rx, const uint8_t* tx, const size_t len) {
+  if (!spi0_) return;
   for (size_t i = 0; i < len; ++i) {
-    uint32_t cs = rd32(spi0, SPI0_CS);
+    uint32_t cs = Read(spi0_, SPI0_CS);
     cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
-    wr32(spi0, SPI0_CS, cs);
+    Write(spi0_, SPI0_CS, cs);
 
-    cs = rd32(spi0, SPI0_CS);
+    cs = Read(spi0_, SPI0_CS);
     cs &= ~SPI0_CS_CS_MASK;  // CS0
     cs |= SPI0_CS_TA;        // assert CS
-    wr32(spi0, SPI0_CS, cs);
+    Write(spi0_, SPI0_CS, cs);
 
-    while ((rd32(spi0, SPI0_CS) & SPI0_CS_TXD) == 0) {
+    while ((Read(spi0_, SPI0_CS) & SPI0_CS_TXD) == 0) {
     }
-    wr32(spi0, SPI0_FIFO, tx[i]);
-    while ((rd32(spi0, SPI0_CS) & SPI0_CS_DONE) == 0) {
+    Write(spi0_, SPI0_FIFO, tx[i]);
+    while ((Read(spi0_, SPI0_CS) & SPI0_CS_DONE) == 0) {
     }
-    rx[i] = static_cast<uint8_t>(rd32(spi0, SPI0_FIFO));
+    rx[i] = static_cast<uint8_t>(Read(spi0_, SPI0_FIFO));
 
-    cs = rd32(spi0, SPI0_CS);
+    cs = Read(spi0_, SPI0_CS);
     cs &= ~SPI0_CS_TA;  // deassert CS
-    wr32(spi0, SPI0_CS, cs);
+    Write(spi0_, SPI0_CS, cs);
   }
 }

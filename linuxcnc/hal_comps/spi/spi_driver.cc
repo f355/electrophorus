@@ -9,14 +9,14 @@
 #include "rpi4_spi_driver.h"
 #include "rpi5_spi_driver.h"
 
-uint32_t SpiDriver::rd32(volatile void* base, const uint32_t off) {
+uint32_t SpiDriver::Read(volatile void* base, const uint32_t off) {
   return *reinterpret_cast<volatile uint32_t*>(static_cast<volatile uint8_t*>(base) + off);
 }
-void SpiDriver::wr32(volatile void* base, const uint32_t off, const uint32_t value) {
+void SpiDriver::Write(volatile void* base, const uint32_t off, const uint32_t value) {
   *reinterpret_cast<volatile uint32_t*>(static_cast<volatile uint8_t*>(base) + off) = value;
 }
 
-bool SpiDriver::compat_contains_any(const std::initializer_list<const char*> patterns) {
+bool SpiDriver::CompatContainsAny(const std::initializer_list<const char*> patterns) {
   const int fd = open("/proc/device-tree/compatible", O_RDONLY);
   if (fd < 0) return false;
   char buf[1024];
@@ -29,8 +29,8 @@ bool SpiDriver::compat_contains_any(const std::initializer_list<const char*> pat
   return false;
 }
 
-std::unique_ptr<SpiDriver> SpiDriver::detect(const int frequency_hz) {
-  if (auto d = std::make_unique<Rpi5SpiDriver>(); d->init(frequency_hz) > 0) return d;
-  if (auto d = std::make_unique<Rpi4SpiDriver>(); d->init(frequency_hz) > 0) return d;
+std::unique_ptr<SpiDriver> SpiDriver::Detect(const int frequency_hz) {
+  if (auto d = std::make_unique<Rpi5SpiDriver>(); d->Init(frequency_hz) > 0) return d;
+  if (auto d = std::make_unique<Rpi4SpiDriver>(); d->Init(frequency_hz) > 0) return d;
   return nullptr;
 }

@@ -5,12 +5,12 @@
 
 class Rpi4SpiDriver final : public SpiDriver {
  public:
-  int init(int frequency_hz) override;
-  void xfer(uint8_t* rx, const uint8_t* tx, size_t len) override;
+  int Init(int frequency_hz) override;
+  void Xfer(uint8_t* rx, const uint8_t* tx, size_t len) override;
 
  private:
-  volatile uint8_t* bar = nullptr;
-  volatile uint8_t* gpio = nullptr;
-  volatile uint8_t* spi0 = nullptr;
-  int mem_fd = -1;
+  volatile uint8_t* bar_ = nullptr;
+  volatile uint8_t* gpio_ = nullptr;
+  volatile uint8_t* spi0_ = nullptr;
+  int mem_fd_ = -1;
 };

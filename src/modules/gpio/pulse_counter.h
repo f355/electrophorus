@@ -1,21 +1,17 @@
-#ifndef PULSECOUNTER_H
-#define PULSECOUNTER_H
+#pragma once
 
 #include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
 class PulseCounter final : public Module {
-  SpiComms* comms;
-  uint8_t var_number;
+  uint8_t var_number_;
 
-  volatile int32_t counter = 0;
-  void interrupt_handler();
+  volatile int32_t counter_ = 0;
+  void InterruptHandler();
 
  public:
-  PulseCounter(uint8_t var_number, const Pin* pin, SpiComms* comms);
+  PulseCounter(uint8_t var_number, const Pin* pin);
 
-  void on_rx() override;
+  void OnRx() override;
 };
-
-#endif

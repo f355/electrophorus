@@ -11,45 +11,45 @@
 class Electrophorus {
  public:
   Electrophorus() = default;
-  int init();
-  void updateFreq(long period_ns);
-  void write(long period_ns);
-  void read(long period_ns);
+  int Init();
+  void UpdateFreq(long period_ns);
+  void Write(long period_ns);
+  void Read(long period_ns);
 
  private:
-  void spi_transfer() { spi->xfer(rx_buffer.bytes, tx_buffer.bytes, tx_buffer.size()); }
+  void SpiTransfer() { spi_->Xfer(rx_buffer_.bytes, tx_buffer_.bytes, tx_buffer_.Size()); }
 
-  [[nodiscard]] bool pin_err(const int retval) const {
+  [[nodiscard]] bool PinErr(const int retval) const {
     if (retval < 0) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pin export failed err=%d\n", modname, retval);
-      hal_exit(comp_id);
+      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pin export failed err=%d\n", modname_, retval);
+      hal_exit(comp_id_);
       return true;
     }
     return false;
   }
-  int comp_id = -1;
-  const char *modname = "electrophorus";
-  const char *prefix = "carvera";
+  int comp_id_ = -1;
+  const char *modname_ = "electrophorus";
+  const char *prefix_ = "carvera";
 
   struct Pins {
     hal_bit_t *spi_enable;
     hal_bit_t *spi_reset;
     hal_bit_t *spi_status;
-    hal_float_t *output_vars[OUTPUT_VARS];
-    hal_float_t *input_vars[INPUT_VARS];
-    hal_bit_t *outputs[OUTPUT_PINS];
-    hal_bit_t *inputs[INPUT_PINS * 2];
+    hal_float_t *output_vars[kNumOutputVars];
+    hal_float_t *input_vars[kNumInputVars];
+    hal_bit_t *outputs[kNumOutputPins];
+    hal_bit_t *inputs[kNumInputPins * 2];
   };
-  Pins *pin = nullptr;
+  Pins *pin_ = nullptr;
 
-  std::unique_ptr<SpiDriver> spi;
+  std::unique_ptr<SpiDriver> spi_;
 
-  SpiBuffer<LinuxCncState> tx_buffer;
-  SpiBuffer<PruState> rx_buffer;
-  LinuxCncState *linuxcnc_state = &tx_buffer.state();
-  PruState *pru_state = &rx_buffer.state();
+  SpiBuffer<LinuxCncState> tx_buffer_;
+  SpiBuffer<PruState> rx_buffer_;
+  LinuxCncState *linuxcnc_state_ = &tx_buffer_.AsStruct();
+  PruState *pru_state_ = &rx_buffer_.AsStruct();
 
-  bool spi_reset_old = false;
-  uint32_t last_packet_seen = 0;
-  Stepgen stepgens[STEPGENS]{};
+  bool spi_reset_old_ = false;
+  uint32_t last_packet_seen_ = 0;
+  Stepgen stepgens_[kNumStepgens]{};
 };

@@ -1,30 +1,26 @@
-#ifndef STEPGEN_H
-#define STEPGEN_H
+#pragma once
 
 #include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
 class Stepgen final : public Module {
-  SpiComms *comms;
-  uint8_t stepgen_number;
+  uint8_t stepgen_number_;
 
-  Pin *step_pin, *dir_pin;
+  Pin *step_pin_, *dir_pin_;
 
-  uint32_t substeps = 0;                    // Q0.32 fractional substeps
-  uint16_t steps = 0;                       // whole steps mod 2^16, updated on substeps wrap
-  volatile uint32_t substeps_per_tick = 0;  // commanded substeps per base tick (magnitude)
-  bool current_dir = true;                  // direction we're moving in
-  volatile bool dir_flipped = false;        // indicates that the direction has changed
+  uint32_t substeps_ = 0;                    // Q0.32 fractional substeps
+  uint16_t steps_ = 0;                       // whole steps mod 2^16, updated on substeps wrap
+  volatile uint32_t substeps_per_tick_ = 0;  // commanded substeps per base tick (magnitude)
+  bool current_dir_ = true;                  // direction we're moving in
+  volatile bool dir_flipped_ = false;        // indicates that the direction has changed
 
  public:
-  Stepgen(uint8_t stepgen_number, Pin *step_pin, Pin *dir_pin, SpiComms *comms);
+  Stepgen(uint8_t stepgen_number, Pin *step_pin, Pin *dir_pin);
 
   ~Stepgen() = default;
 
-  bool is_stepgen() override;
-  void make_steps() override;
-  void on_rx() override;
+  bool IsStepgen() override;
+  void MakeSteps() override;
+  void OnRx() override;
 };
-
-#endif

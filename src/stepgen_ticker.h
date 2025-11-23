@@ -1,5 +1,4 @@
-#ifndef STEPGEN_TICKER_H
-#define STEPGEN_TICKER_H
+#pragma once
 
 #include <vector>
 
@@ -7,18 +6,18 @@
 #include "modules/module.h"
 
 class StepgenTicker final {
-  LPC_TIM_TypeDef* timer = LPC_TIM0;
+  LPC_TIM_TypeDef* timer_ = LPC_TIM0;
 
-  std::vector<Module*> modules;
+  std::vector<Module*> modules_;
 
-  static void tick();
+  static void Tick();
 
   StepgenTicker() = default;
 
  public:
-  static StepgenTicker* instance();
-  void register_modules(const std::vector<Module*>& ms);
-  void start() const;
-};
+  static StepgenTicker* Instance();
 
-#endif  // STEPGEN_TICKER_H
+  void RegisterModules(const std::vector<Module*>& ms);
+
+  void Start() const;
+};

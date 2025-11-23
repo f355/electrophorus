@@ -1,14 +1,14 @@
 #include "pwm.h"
 
-PWM::PWM(const uint8_t var_number, const Pin* pin, SpiComms* comms)
-    : comms(comms), var_number(var_number), pwm_pin(new PwmOut(pin->to_pin_name())), duty_cycle(0) {
-  this->pwm_pin->period_us(PWM_PERIOD_US);
+PWM::PWM(const uint8_t var_number, const Pin* pin)
+    : var_number_(var_number), pwm_pin_(new PwmOut(pin->ToPinName())), duty_cycle_(0) {
+  pwm_pin_->period_us(kPwmPeriodUs);
 }
 
-void PWM::on_rx() {
-  const int32_t new_duty_cycle = this->comms->get_linuxcnc_state()->output_vars[this->var_number];
-  if (this->duty_cycle != new_duty_cycle) {
-    this->duty_cycle = new_duty_cycle;
-    this->pwm_pin->pulsewidth_us(this->duty_cycle * PWM_PERIOD_US / 1000);
+void PWM::OnRx() {
+  const int32_t new_duty_cycle = SpiComms::Instance()->get_linuxcnc_state()->output_vars[var_number_];
+  if (duty_cycle_ != new_duty_cycle) {
+    duty_cycle_ = new_duty_cycle;
+    pwm_pin_->pulsewidth_us(duty_cycle_ * kPwmPeriodUs / 1000);
   }
 }

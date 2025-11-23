@@ -1,23 +1,19 @@
-#ifndef ADC_H
-#define ADC_H
+#pragma once
 
 #include "modules/module.h"
 #include "pin.h"
 #include "spi_comms.h"
 
 class ADC final : public Module {
-  SpiComms* comms;
-  uint8_t var_number;
-  AnalogIn* adc;
+  uint8_t var_number_;
+  AnalogIn* adc_;
 
-  uint16_t value;
-  uint32_t run_every;
-  uint32_t counter;
+  uint16_t value_;
+  uint32_t run_every_;
+  uint32_t counter_;
 
  public:
-  ADC(uint8_t var_number, Pin* pin, SpiComms* comms);
+  ADC(uint8_t var_number, Pin* pin);
 
-  void on_rx() override;
+  void OnRx() override;
 };
-
-#endif
