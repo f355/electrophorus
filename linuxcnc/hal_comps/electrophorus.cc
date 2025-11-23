@@ -122,11 +122,12 @@ void Electrophorus::Read(const long period_ns) {
     *pin_->spi_status = true;
     reset_feedback = true;
     publish_inputs = true;
-  } else if (last_packet_seen_ + 1u == cnt) {
+  } else if (last_packet_seen_ + 2u == cnt) {
     *pin_->spi_status = true;
     for (auto &stepgen : stepgens_) stepgen.ApplyFeedback(pru_state_);
     publish_inputs = true;
   } else {
+    rtapi_print_msg(RTAPI_MSG_ERR, "PRU packet counter mismatch, expecting %u, got %u\n", last_packet_seen_ + 2u, cnt);
     *pin_->spi_status = false;
     reset_feedback = true;
   }
