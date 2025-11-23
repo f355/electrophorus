@@ -4,11 +4,6 @@
 
 constexpr auto kStepgenTickFrequency = 100'000;  // 100 kHz
 
-// on LPC1768, the period is shared among all PWMs,
-// so we don't try setting it to different values - the last one wins.
-// many bothans died to bring us this information.
-constexpr auto kPwmPeriodUs = 10'000;  // 10ms/100Hz
-
 constexpr auto kNumStepgens = 4;
 constexpr const char* kStepgenNames[kNumStepgens] = {"x", "y", "z", "a"};
 
@@ -30,6 +25,6 @@ constexpr outputPin_t kOutputPins[kNumOutputPins] = {{"work-light", 2, 0, false}
 constexpr auto kNumInputVars = 3;
 constexpr const char* kInputVarNames[kNumInputVars] = {"spindle-feedback", "spindle-temperature",
                                                        "power-supply-temperature"};
-constexpr auto kNumOutputVars = 4;
-constexpr const char* kOutputVarNames[kNumOutputVars] = {"spindle-duty", "spindle-fan-duty", "power-supply-fan-duty",
-                                                         "ext-port-duty"};
+constexpr auto kNumOutputVars = 5;
+constexpr const char* kOutputVarNames[kNumOutputVars] = {"pwm-period-us", "spindle-duty", "spindle-fan-duty",
+                                                         "power-supply-fan-duty", "ext-port-duty"};

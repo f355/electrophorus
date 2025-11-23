@@ -36,10 +36,10 @@ vector<Module*> MachineModules() {
       new PulseCounter(0, new Pin(2, 7)),  // spindle encoder feedback
 
       // PWMs
-      new PWM(0, new Pin(2, 5)),  // spindle - keep this at output_var=0 for e-stop to kill it
-      new PWM(1, new Pin(2, 1)),  // spindle fan
-      new PWM(2, new Pin(2, 3)),  // power supply fan
-      new PWM(3, new Pin(2, 2)),  // EXT port output
+      new PWM(1, 0, new Pin(2, 5)),  // spindle - keep this at output_var=0 for e-stop to kill it
+      new PWM(2, 0, new Pin(2, 1)),  // spindle fan
+      new PWM(3, 0, new Pin(2, 3)),  // power supply fan
+      new PWM(4, 0, new Pin(2, 2)),  // EXT port output
 
       // thermistor ADCs (converted to temperature on LinuxCNC side)
       new ADC(1, new Pin(1, 31)),  // spindle

@@ -7,8 +7,10 @@ addf scale.spindle-fb servo-thread
 addf lowpass.spindle-fb servo-thread
 addf ddt.spindle-fb servo-thread
 
-# output - 0.0583 scale factor gives the right duty cycle at 13k RPM
-setp scale.spindle-gain.gain 0.0583
+setp carvera.output-var.pwm-period-us [CARVERA]PWM_PERIOD_US
+
+# output
+setp scale.spindle-gain.gain [CARVERA]SPINDLE_GAIN
 net spindle.speed.scale spindle.0.speed-out => scale.spindle-gain.in
 net spindle.speed.pwm scale.spindle-gain.out => carvera.output-var.spindle-duty
 

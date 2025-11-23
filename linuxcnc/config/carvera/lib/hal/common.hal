@@ -1,7 +1,7 @@
 loadrt [KINS]KINEMATICS
 loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
 
-loadrt electrophorus spi_freq=10000000  # 10 MHz
+loadrt electrophorus spi_freq=[CARVERA]SPI_FREQ  # 10 MHz
 loadrt estop_latch names=estop-latch
 
 addf carvera.read servo-thread
