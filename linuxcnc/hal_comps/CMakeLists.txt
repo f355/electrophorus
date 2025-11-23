@@ -24,6 +24,8 @@ add_library(${COMPONENT_NAME}_objs OBJECT
 # Align compile flags/defs with halcompile Makefile.modinc (uspace)
 target_include_directories(${COMPONENT_NAME}_objs SYSTEM PRIVATE ${LINUXCNC_INCLUDE_DIR})
 
+target_include_directories(${COMPONENT_NAME}_objs PRIVATE .)
+
 target_compile_definitions(${COMPONENT_NAME}_objs PRIVATE RTAPI realtime _GNU_SOURCE __MODULE__ SIM)
 target_compile_options(${COMPONENT_NAME}_objs PRIVATE
         -fPIC
@@ -118,6 +120,8 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif ()
 
 target_include_directories(${COMPONENT_NAME} SYSTEM PRIVATE ${LINUXCNC_INCLUDE_DIR})
+
+target_include_directories(${COMPONENT_NAME} PRIVATE .)
 
 # halcompile links -lm by default
 target_link_libraries(${COMPONENT_NAME} PRIVATE m)
