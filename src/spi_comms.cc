@@ -28,7 +28,7 @@ SpiComms::SpiComms() {
       ->dstAddr(reinterpret_cast<uint32_t>(&LPC_SSP0->DR))
       ->control(dma_.CxControl_SBSize(MODDMA::_4) | dma_.CxControl_SWidth(MODDMA::byte) |
                 dma_.CxControl_DBSize(MODDMA::_4) | dma_.CxControl_DWidth(MODDMA::byte) |
-                dma_.CxControl_TransferSize(tx_buffer_.Size()) | dma_.CxControl_SI())
+                dma_.CxControl_TransferSize(tx_buffer_.Size()) | dma_.CxControl_SI() | dma_.CxControl_I())
       ->nextLLI(reinterpret_cast<uint32_t>(&tx_lli_));
 
   tx_dma_.channelNum(MODDMA::Channel_0)
@@ -37,6 +37,7 @@ SpiComms::SpiComms() {
       ->transferType(MODDMA::m2p)
       ->dstConn(MODDMA::SSP0_Tx)
       ->dmaLLI(reinterpret_cast<uint32_t>(&tx_lli_))
+      ->attach_tc(this, &SpiComms::TxCallback)
       ->attach_err(this, &SpiComms::ErrCallback);
 
   rx_dma_.channelNum(MODDMA::Channel_1)
@@ -66,35 +67,24 @@ void SpiComms::Start() {
 
 // ReSharper disable once CppDFAUnreachableFunctionCall
 void SpiComms::RxCallback() {
-  dma_.clearTcIrq();
-
-  // Check and move the received SPI data payload
   switch (rx_buffer_.AsStruct().command) {
-    case SpiCommand::Read:
-      // Increment packet counter for the next reply
-      tx_buffer_.AsStruct().packet_counter++;
+    case SpiCommand::Write: {
+      // expose the received data only if the e-stop button isn't pressed
+      if (!e_stop_active_) memcpy(linuxcnc_state_.bytes, rx_buffer_.bytes, sizeof(LinuxCncState));
+      RxListener::HandleRxDeferred();
+      [[fallthrough]];
+    }
+    case SpiCommand::Read: {
       data_ready_ = true;
       reject_count_ = 0;
       break;
-
-    case SpiCommand::Write:
-      data_ready_ = true;
-      reject_count_ = 0;
-      // don't copy the linuxcnc_state if the e-stop button is pressed
-      if (!e_stop_active_) {
-        for (size_t i = 0; i < sizeof(LinuxCncState); ++i) {
-          linuxcnc_state_.bytes[i] = rx_buffer_.bytes[i];
-        }
-        RxListener::HandleRxDeferred();
-      }
-      break;
-
+    }
     default:
-      if (reject_count_++ > 5) {
-        spi_error_ = true;
-      }
+      if (reject_count_++ > 5) spi_error_ = true;
   }
 }
+
+void SpiComms::TxCallback() { tx_buffer_.AsStruct().packet_counter++; }
 
 SpiComms* SpiComms::Instance() {
   static SpiComms instance;
