@@ -40,10 +40,11 @@ void Stepgen::MakeSteps() {
 }
 
 void Stepgen::OnRx() {
-  const uint32_t inc = SpiComms::Instance()->get_linuxcnc_state()->steps_per_tick_cmd[stepgen_number_];
-  substeps_per_tick_ = inc;
+  const auto state = SpiComms::Instance()->get_linuxcnc_state();
 
-  const bool is_forward = (SpiComms::Instance()->get_linuxcnc_state()->stepgen_dir_mask >> stepgen_number_ & 0x1) != 0;
+  substeps_per_tick_ = state->steps_per_tick_cmd[stepgen_number_];
+
+  const bool is_forward = (state->stepgen_dir_mask >> stepgen_number_ & 0x1) != 0;
   if (current_dir_ != is_forward) {
     current_dir_ = is_forward;
     dir_flipped_ = true;

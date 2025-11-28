@@ -5,9 +5,11 @@
 EStop::EStop(const Pin* pin) {
   const auto irqPin = new InterruptIn(pin->ToPinName());
   if (pin->inverting_) {
+    // normally-closed button
     irqPin->fall(callback(&EStop::Engaged));
     irqPin->rise(callback(&EStop::Disengaged));
   } else {
+    // normally-open button
     irqPin->rise(callback(&EStop::Engaged));
     irqPin->fall(callback(&EStop::Disengaged));
   }

@@ -25,7 +25,6 @@ endif ()
 add_subdirectory(mbed-os)
 
 add_executable(${PROJECT_NAME}
-        src/dma/dma.cc
         src/machine_config.cc
         src/main.cc
         src/modules/adc/adc.cc
