@@ -4,8 +4,6 @@
 
 #include "machine_definitions.h"
 
-using namespace std;
-
 enum class SpiCommand : int32_t {
   Read = 0x72656164,   // "read" SPI command, LinuxCNC wants to read PRU state
   Write = 0x77726974,  // "writ" SPI command, LinuxCNC wants to write its state

@@ -24,9 +24,8 @@ endif ()
 
 add_subdirectory(mbed-os)
 
-add_subdirectory(lib/MODDMA)
-
 add_executable(${PROJECT_NAME}
+        src/dma/dma.cc
         src/machine_config.cc
         src/main.cc
         src/modules/adc/adc.cc
@@ -44,6 +43,6 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PUBLIC . src linuxcnc/hal_comps)
 
-target_link_libraries(${PROJECT_NAME} mbed-baremetal moddma)
+target_link_libraries(${PROJECT_NAME} mbed-baremetal)
 
 mbed_set_post_build(${PROJECT_NAME})

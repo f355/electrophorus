@@ -35,6 +35,11 @@ constexpr uint32_t RP1_PADS_PDE_SET = 1U << 2;
 
 constexpr uint32_t RP1_SPI_REF_CLK_HZ = 200000000U;
 
+Rpi5SpiDriver::~Rpi5SpiDriver() {
+  if (bar_ && bar_ != MAP_FAILED) munmap(const_cast<uint8_t*>(bar_), RP1_BAR1_LEN);
+  if (mem_fd_ >= 0) close(mem_fd_);
+}
+
 int Rpi5SpiDriver::Init(int frequency_hz) {
   if (!CompatContainsAny({
           "raspberrypi,5",

@@ -37,6 +37,11 @@ static uint32_t fsel_shift(const uint32_t p) { return 3u * (p % 10u); }
 static uint32_t fsel_mask(const uint32_t p) { return 7u << fsel_shift(p); }
 static uint32_t fsel_alt0(const uint32_t p) { return 4u << fsel_shift(p); }
 
+Rpi4SpiDriver::~Rpi4SpiDriver() {
+  if (bar_ && bar_ != MAP_FAILED) munmap(const_cast<uint8_t*>(bar_), BCM_PERI_MAP_LEN);
+  if (mem_fd_ >= 0) close(mem_fd_);
+}
+
 int Rpi4SpiDriver::Init(int frequency_hz) {
   if (!CompatContainsAny({
           "raspberrypi,4",

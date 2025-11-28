@@ -1,6 +1,6 @@
 #include "spi_comms.h"
 
-#include "MODDMA.h"
+#include "dma/dma.h"
 #include "mbed.h"
 #include "rx_listener.h"
 #include "spi_protocol/spi_protocol.h"
@@ -17,55 +17,19 @@ enum State { StIdle, StRunning, StReset };
 }  // namespace
 
 SpiComms::SpiComms() {
-  rx_lli_.dstAddr(reinterpret_cast<uint32_t>(rx_buffer_.bytes))
-      ->srcAddr(reinterpret_cast<uint32_t>(&LPC_SSP0->DR))
-      ->control(dma_.CxControl_SBSize(MODDMA::_4) | dma_.CxControl_SWidth(MODDMA::byte) |
-                dma_.CxControl_DBSize(MODDMA::_4) | dma_.CxControl_DWidth(MODDMA::byte) |
-                dma_.CxControl_TransferSize(rx_buffer_.Size()) | dma_.CxControl_DI() | dma_.CxControl_I())
-      ->nextLLI(reinterpret_cast<uint32_t>(&rx_lli_));
+  auto* dma = SspDma::Instance();
+  dma->ConfigureTx(tx_buffer_.bytes, tx_buffer_.Size(), callback(this, &SpiComms::TxCallback));
+  dma->ConfigureRx(rx_buffer_.bytes, rx_buffer_.Size(), callback(this, &SpiComms::RxCallback));
+  dma->SetErrorCallback(callback(&SpiComms::ErrCallback));
 
-  tx_lli_.srcAddr(reinterpret_cast<uint32_t>(tx_buffer_.bytes))
-      ->dstAddr(reinterpret_cast<uint32_t>(&LPC_SSP0->DR))
-      ->control(dma_.CxControl_SBSize(MODDMA::_4) | dma_.CxControl_SWidth(MODDMA::byte) |
-                dma_.CxControl_DBSize(MODDMA::_4) | dma_.CxControl_DWidth(MODDMA::byte) |
-                dma_.CxControl_TransferSize(tx_buffer_.Size()) | dma_.CxControl_SI() | dma_.CxControl_I())
-      ->nextLLI(reinterpret_cast<uint32_t>(&tx_lli_));
-
-  tx_dma_.channelNum(MODDMA::Channel_0)
-      ->srcMemAddr(reinterpret_cast<uint32_t>(tx_buffer_.bytes))
-      ->transferSize(tx_buffer_.Size())
-      ->transferType(MODDMA::m2p)
-      ->dstConn(MODDMA::SSP0_Tx)
-      ->dmaLLI(reinterpret_cast<uint32_t>(&tx_lli_))
-      ->attach_tc(this, &SpiComms::TxCallback)
-      ->attach_err(this, &SpiComms::ErrCallback);
-
-  rx_dma_.channelNum(MODDMA::Channel_1)
-      ->dstMemAddr(reinterpret_cast<uint32_t>(rx_buffer_.bytes))
-      ->transferSize(rx_buffer_.Size())
-      ->transferType(MODDMA::p2m)
-      ->srcConn(MODDMA::SSP0_Rx)
-      ->dmaLLI(reinterpret_cast<uint32_t>(&rx_lli_))
-      ->attach_tc(this, &SpiComms::RxCallback)
-      ->attach_err(this, &SpiComms::ErrCallback);
-
-  // Initialize PRU->host packet counter
   tx_buffer_.AsStruct().packet_counter = kInitCounter;
 }
 
 void SpiComms::Start() {
-  // just initialize the peripheral, the communication is done through DMA
   new SPISlave(kSpiMosi, kSpiMiso, kSpiSck, kSpiSsel);
-
-  dma_.Prepare(&rx_dma_);
-  dma_.Prepare(&tx_dma_);
-
-  // Enable SSP0 for DMA
-  LPC_SSP0->DMACR = 0;
-  LPC_SSP0->DMACR = 1 << 1 | 1 << 0;  // TX,RX DMA Enable
+  SspDma::Instance()->Start();
 }
 
-// ReSharper disable once CppDFAUnreachableFunctionCall
 void SpiComms::RxCallback() {
   switch (rx_buffer_.AsStruct().command) {
     case SpiCommand::Write: {
@@ -86,6 +50,11 @@ void SpiComms::RxCallback() {
 
 void SpiComms::TxCallback() { tx_buffer_.AsStruct().packet_counter++; }
 
+void SpiComms::EStop(const bool active) {
+  e_stop_active_ = active;
+  if (active) RxListener::HandleRxDeferred();
+}
+
 SpiComms* SpiComms::Instance() {
   static SpiComms instance;
   return &instance;
@@ -101,11 +70,11 @@ void SpiComms::Loop() {
     Watchdog::get_instance().kick();
 
     if (e_stop_active_ != prev_e_stop_active) {
-      if (e_stop_active_) {
+      if (e_stop_active_)
         printf("e-stop pressed, machine halted!\n");
-      } else {
+      else
         printf("e-stop released, resuming operation...\n");
-      }
+
       prev_e_stop_active = e_stop_active_;
     }
 
@@ -116,28 +85,22 @@ void SpiComms::Loop() {
 
     switch (current_state) {
       case StIdle:
-        if (current_state != prev_state) {
-          printf("waiting for LinuxCNC...\n");
-        }
+        if (current_state != prev_state) printf("waiting for LinuxCNC...\n");
         prev_state = current_state;
 
-        if (data_ready_) {
-          current_state = StRunning;
-        }
+        if (data_ready_) current_state = StRunning;
+
         break;
 
       case StRunning:
-        if (current_state != prev_state) {
-          printf("running...\n");
-        }
+        if (current_state != prev_state) printf("running...\n");
         prev_state = current_state;
 
         if (data_ready_) {
           spi_delay = 0;
           data_ready_ = false;
-        } else {
+        } else
           spi_delay++;
-        }
 
         if (spi_delay > kMaxSpiDelay) {
           printf("no communication from LinuxCNC, e-stop active?\n");
@@ -146,9 +109,7 @@ void SpiComms::Loop() {
         }
         break;
       case StReset:
-        if (current_state != prev_state) {
-          printf("resetting receive buffer...\n");
-        }
+        if (current_state != prev_state) printf("resetting receive buffer...\n");
         prev_state = current_state;
 
         // set the whole rxData buffer to 0

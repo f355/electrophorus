@@ -1,38 +1,19 @@
 #include "e_stop.h"
 
-#include "rx_listener.h"
 #include "spi_comms.h"
 
-EStop::EStop(const Pin* pin) : normally_closed_(pin->inverting_) {
+EStop::EStop(const Pin* pin) {
   const auto irqPin = new InterruptIn(pin->ToPinName());
-  irqPin->rise(callback(this, &EStop::RiseHandler));
-  irqPin->fall(callback(this, &EStop::FallHandler));
-  if (pin->Get()) {
-    Engaged();
-  }
-}
-
-void EStop::RiseHandler() const {
-  if (normally_closed_) {
-    Disengaged();
+  if (pin->inverting_) {
+    irqPin->fall(callback(&EStop::Engaged));
+    irqPin->rise(callback(&EStop::Disengaged));
   } else {
-    Engaged();
+    irqPin->rise(callback(&EStop::Engaged));
+    irqPin->fall(callback(&EStop::Disengaged));
   }
+  if (pin->Get()) Engaged();
 }
 
-void EStop::FallHandler() const {
-  if (normally_closed_) {
-    Engaged();
-  } else {
-    Disengaged();
-  }
-}
+void EStop::Engaged() { SpiComms::Instance()->EStop(true); }
 
-// ReSharper disable once CppDFAUnreachableFunctionCall
-void EStop::Engaged() {
-  SpiComms::Instance()->e_stop_active_ = true;
-  RxListener::HandleRxDeferred();
-}
-
-// ReSharper disable once CppDFAUnreachableFunctionCall
-void EStop::Disengaged() { SpiComms::Instance()->e_stop_active_ = false; }
+void EStop::Disengaged() { SpiComms::Instance()->EStop(false); }

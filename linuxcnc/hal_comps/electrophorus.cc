@@ -150,7 +150,7 @@ void Electrophorus::Write(const long period_ns) {
   for (int i = 0; i < kNumOutputVars; i++)
     linuxcnc_state_->output_vars[i] = static_cast<int32_t>(*pin_->output_vars[i]);
   for (int i = 0; i < kNumOutputPins; i++) {
-    if (*pin_->outputs[i] == 1)
+    if (*pin_->outputs[i])
       linuxcnc_state_->outputs |= 1 << i;
     else
       linuxcnc_state_->outputs &= ~(1 << i);

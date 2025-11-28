@@ -22,7 +22,7 @@ DEFAULT_SPINDLE_0_SPEED = 10000
 # spindle up/down increment in RPM
 SPINDLE_INCREMENT = 200
 
-# min max apindle speed manually allowed
+# min max spindle speed manually allowed
 MIN_SPINDLE_0_SPEED = 1000
 MAX_SPINDLE_0_SPEED = 13000
 
@@ -56,7 +56,7 @@ NGCGUI_SUBFILE_PATH = ~/linuxcnc/nc_files/ngcgui_lib/
 NGCGUI_SUBFILE = slot.ngc
 NGCGUI_SUBFILE = qpocket.ngc
 
-# qtdragon saves MDI cxommands to this file
+# qtdragon saves MDI commands to this file
 MDI_HISTORY_FILE = mdi_history.dat
 # qtdragon saves rnning logs to this file
 LOG_FILE = qtdragon.log

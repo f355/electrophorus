@@ -5,6 +5,7 @@
 
 class Rpi4SpiDriver final : public SpiDriver {
  public:
+  ~Rpi4SpiDriver() override;
   int Init(int frequency_hz) override;
   void Xfer(uint8_t* rx, const uint8_t* tx, size_t len) override;
 
