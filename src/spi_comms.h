@@ -4,12 +4,26 @@
 #include "spi_protocol/spi_protocol.h"
 
 class SpiComms {
-  SpiBuffer<LinuxCncState> rx_buffer_{};
-  SpiBuffer<PruState> tx_buffer_{};
+  struct DmaLli {
+    uint32_t src;
+    uint32_t dst;
+    uint32_t next;
+    uint32_t ctrl;
+  };
 
-  void RxCallback();
+  DmaLli tx_lli_{};
+  DmaLli rx_lli_{};
+
+  SpiBuffer<PruState> tx_buffer_{};
+  SpiBuffer<LinuxCncState> rx_buffer_{};
+
   void TxCallback();
+  void RxCallback();
   static void ErrCallback() { error("DMA error!\n"); }
+  static void DmaIrqHandler();
+
+  [[nodiscard]] uint32_t CtrlWord(bool src_inc, bool dst_inc) const;
+  static uint32_t ConfigWord(uint32_t transfer_type, uint32_t conn);
 
   SpiBuffer<LinuxCncState> linuxcnc_state_{};
 
