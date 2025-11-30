@@ -2,7 +2,6 @@
 
 #include "modules/module.h"
 #include "pin.h"
-#include "spi_comms.h"
 
 class Stepgen final : public Module {
   uint8_t stepgen_number_;

@@ -1,6 +1,11 @@
 #include "digital_ins.h"
 
+#include <cstdio>
+
+#include "LPC17xx.h"
 #include "pin.h"
+#include "spi_comms.h"
+#include "spi_protocol/machine_definitions.h"
 
 DigitalIns::DigitalIns(const uint8_t num_pins, const inputPin_t pins[])
     : num_pins_(num_pins), ports_(new LPC_GPIO_TypeDef*[num_pins]), pins_(new uint8_t[num_pins]), invert_mask_(0x0) {

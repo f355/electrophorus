@@ -2,7 +2,6 @@
 
 #include "modules/module.h"
 #include "pin.h"
-#include "spi_comms.h"
 
 class PulseCounter final : public Module {
   uint8_t var_number_;

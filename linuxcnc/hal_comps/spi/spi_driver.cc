@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 
 #include "rpi4_spi_driver.h"

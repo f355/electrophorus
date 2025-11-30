@@ -2,7 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
+
+#include "hal.h"
+#include "rtapi.h"
+#include "spi_protocol/spi_protocol.h"
 
 int Stepgen::Init(const int comp_id, const char *const modname, const char *const prefix, const int i) {
   this->index_ = i;

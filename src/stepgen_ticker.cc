@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "LPC17xx.h"
+#include "mbed.h"
 #include "modules/module.h"
 #include "spi_protocol/machine_definitions.h"
 

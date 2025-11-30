@@ -1,6 +1,14 @@
 #include "electrophorus.h"
 
+#include <memory>
+
+#include "hal.h"
+#include "rtapi.h"
+// ReSharper disable once CppUnusedIncludeDirective
 #include "rtapi_app.h"
+#include "spi/spi_driver.h"
+#include "spi_protocol/spi_protocol.h"
+#include "stepgen/stepgen.h"
 
 MODULE_AUTHOR("Konstantin Tcepliaev <f355@f355.org>");
 MODULE_DESCRIPTION("Driver for the Carvera family of desktop milling machines");

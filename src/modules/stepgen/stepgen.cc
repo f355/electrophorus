@@ -1,5 +1,8 @@
 #include "stepgen.h"
 
+#include "pin.h"
+#include "spi_comms.h"
+
 Stepgen::Stepgen(const uint8_t stepgen_number, Pin* step_pin, Pin* dir_pin)
     : stepgen_number_(stepgen_number), step_pin_(step_pin->AsOutput()), dir_pin_(dir_pin->AsOutput()) {
   dir_pin_->Set(current_dir_);

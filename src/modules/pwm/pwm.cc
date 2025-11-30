@@ -1,5 +1,9 @@
 #include "pwm.h"
 
+#include "mbed.h"
+#include "pin.h"
+#include "spi_comms.h"
+
 PWM::PWM(const uint8_t var_number, const uint8_t period_var_number, const Pin* pin)
     : var_number_(var_number),
       period_var_number_(period_var_number),

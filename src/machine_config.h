@@ -1,7 +1,10 @@
 #pragma once
 
+#include <vector>
+
 #include "modules/module.h"
-#include "spi_comms.h"
+
+using std::vector;
 
 void MachineInit();
 

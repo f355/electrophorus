@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include <cerrno>
-#include <memory>
 
 #include "rtapi.h"
 
@@ -51,8 +50,8 @@ int Rpi5SpiDriver::Init(int frequency_hz) {
   mem_fd_ = rtapi_open_as_root("/dev/mem", O_RDWR | O_SYNC);
   if (mem_fd_ < 0) return -errno;
 
-  bar_ =
-      static_cast<volatile uint8_t*>(mmap(nullptr, RP1_BAR1_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd_, RP1_BAR1));
+  bar_ = static_cast<volatile uint8_t*>(
+      mmap(nullptr, RP1_BAR1_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd_, RP1_BAR1));
   if (bar_ == MAP_FAILED) {
     const int e = -errno;
     close(mem_fd_);

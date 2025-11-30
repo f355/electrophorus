@@ -1,5 +1,8 @@
 #include "spi_comms.h"
 
+#include <cstdio>
+#include <cstring>
+
 #include "LPC17xx.h"
 #include "mbed.h"
 #include "rx_listener.h"

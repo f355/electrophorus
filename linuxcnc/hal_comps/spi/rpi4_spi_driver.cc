@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include <cerrno>
-#include <memory>
 
 #include "rtapi.h"
 

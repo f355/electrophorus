@@ -1,5 +1,7 @@
 #include "pin.h"
 
+#include "LPC17xx.h"
+#include "mbed.h"
 #include "port_api.h"
 
 Pin::Pin(const unsigned char port, const unsigned char pin) : inverting_(false), pin_(pin), port_number_(port) {

@@ -18,6 +18,10 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
+#include <cstdio>
+#include <vector>
+
+#include "LPC17xx.h"
 #include "machine_config.h"
 #include "mbed.h"
 #include "rx_listener.h"
@@ -53,7 +57,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
   printf("initializing SPI...\n");
   const auto comms = SpiComms::Instance();
-  comms->Start();
+  SpiComms::Start();
   printf("SPI initialized.\n");
 
   Watchdog::get_instance().start(2000);

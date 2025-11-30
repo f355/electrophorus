@@ -1,5 +1,9 @@
 #include "adc.h"
 
+#include "mbed.h"
+#include "pin.h"
+#include "spi_comms.h"
+
 ADC::ADC(const uint8_t var_number, Pin* pin)
     : var_number_(var_number),
       adc_(new AnalogIn(pin->AsInput()->ToPinName())),

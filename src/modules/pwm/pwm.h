@@ -1,8 +1,8 @@
 #pragma once
 
+#include "mbed.h"
 #include "modules/module.h"
 #include "pin.h"
-#include "spi_comms.h"
 
 class PWM final : public Module {
   uint8_t var_number_;

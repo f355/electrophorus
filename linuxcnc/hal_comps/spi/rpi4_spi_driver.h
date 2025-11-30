@@ -1,5 +1,4 @@
 #pragma once
-#include <memory>
 
 #include "spi_driver.h"
 

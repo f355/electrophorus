@@ -1,8 +1,10 @@
 #include "e_stop.h"
 
+#include "mbed.h"
+#include "pin.h"
 #include "spi_comms.h"
 
-EStop::EStop(const Pin* pin) {
+EStop::EStop(const Pin* pin) : pin_(pin), initialized_(false) {
   const auto irqPin = new InterruptIn(pin->ToPinName());
   if (pin->inverting_) {
     // normally-closed button
@@ -13,7 +15,13 @@ EStop::EStop(const Pin* pin) {
     irqPin->rise(callback(&EStop::Engaged));
     irqPin->fall(callback(&EStop::Disengaged));
   }
-  if (pin->Get()) Engaged();
+}
+
+void EStop::OnRx() {
+  if (!initialized_) {
+    initialized_ = true;
+    if (pin_->Get()) Engaged();
+  }
 }
 
 void EStop::Engaged() { SpiComms::Instance()->EStop(true); }

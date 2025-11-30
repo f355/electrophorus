@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 typedef struct {
   const char *name;
   uint8_t port;
