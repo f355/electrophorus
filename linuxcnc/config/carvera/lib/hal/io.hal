@@ -1,0 +1,5 @@
+# Proxxon PD 250/E lathe - I/O
+
+# tool setter for tool length probing
+net probe.tool-setter carvera.input.tool-setter => motion.probe-input
+

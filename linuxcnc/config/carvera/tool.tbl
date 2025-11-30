@@ -1,0 +1,9 @@
+; Lathe tool table
+; Tool# Pocket# X-offset Z-offset Diameter Front-angle Back-angle Orientation
+T1 P1 X0.0 Z0.0 D0.0 I0 J0 Q1 ; Right hand turning tool
+T2 P2 X0.0 Z0.0 D0.0 I0 J0 Q2 ; Left hand turning tool
+T3 P3 X0.0 Z0.0 D0.0 I0 J0 Q3 ; Right hand facing tool
+T4 P4 X0.0 Z0.0 D0.0 I0 J0 Q6 ; Parting tool
+T5 P5 X0.0 Z0.0 D0.0 I0 J0 Q8 ; Boring bar
+T6 P6 X0.0 Z0.0 D3.0 I0 J0 Q9 ; Center drill
+
