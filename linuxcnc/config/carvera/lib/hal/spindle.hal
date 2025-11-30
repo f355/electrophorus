@@ -1,28 +1,20 @@
-loadrt scale names=scale.spindle-gain,scale.spindle-fb
-loadrt lowpass names=lowpass.spindle-fb
-loadrt ddt names=ddt.spindle-fb
+# Proxxon PD 250/E lathe - WS55-220 spindle control
 
-addf scale.spindle-gain servo-thread
-addf scale.spindle-fb servo-thread
-addf lowpass.spindle-fb servo-thread
-addf ddt.spindle-fb servo-thread
+loadrt scale names=scale.spindle-speed
 
-setp carvera.output-var.pwm-period-us [CARVERA]PWM_PERIOD_US
+addf scale.spindle-speed servo-thread
 
-# output
-setp scale.spindle-gain.gain [CARVERA]SPINDLE_GAIN
-net spindle.speed.scale spindle.0.speed-out => scale.spindle-gain.in
-net spindle.speed.pwm scale.spindle-gain.out => carvera.output-var.spindle-duty
+# PWM period (50us = 20kHz)
+setp carvera.output-var.pwm-period-us [LATHE]PWM_PERIOD_US
 
-# feedback
-# two pulses/rev
-setp scale.spindle-fb.gain 0.5
-# smoothen the signal so derivative can work better
-setp lowpass.spindle-fb.gain 0.005
-net spindle.feedback.scale carvera.input-var.spindle-feedback => scale.spindle-fb.in
-net spindle.feedback.lowpass scale.spindle-fb.out => lowpass.spindle-fb.in => spindle.0.revs
-net spindle.feedback.ddt lowpass.spindle-fb.out => ddt.spindle-fb.in
-net spindle.feedback.vel ddt.spindle-fb.out => spindle.0.speed-in
+# speed command -> PWM duty
+# gain = 1.0 / max_rpm * 100 (for percentage)
+# e.g. 3000 RPM max: gain = 100/3000 = 0.033
+setp scale.spindle-speed.gain [LATHE]SPINDLE_GAIN
+net spindle.speed-cmd spindle.0.speed-out => scale.spindle-speed.in
+net spindle.speed-pwm scale.spindle-speed.out => carvera.output-var.spindle-duty
 
-# alarm
-net spindle.alarm carvera.input.stall-alarm-spindle => spindle.0.amp-fault-in
+# spindle enable/direction
+net spindle.on spindle.0.on => carvera.output.spindle-enable
+net spindle.fwd spindle.0.forward => carvera.output.spindle-dir
+

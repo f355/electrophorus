@@ -1,0 +1,22 @@
+# Proxxon PD 250/E lathe - axis configuration
+
+# X axis (cross slide) - joint 0
+setp carvera.stepgen.x.position-scale [JOINT_0]SCALE
+setp carvera.stepgen.x.maxvel [JOINT_0]STEPGEN_MAXVEL
+setp carvera.stepgen.x.maxaccel [JOINT_0]STEPGEN_MAXACCEL
+
+net joint.x.position-cmd joint.0.motor-pos-cmd => carvera.stepgen.x.position-cmd
+net joint.x.position-fb carvera.stepgen.x.position-fb => joint.0.motor-pos-fb
+net joint.x.enable joint.0.amp-enable-out => carvera.stepgen.x.enable
+net joint.x.home carvera.input.home-x => joint.0.home-sw-in
+
+# Z axis (carriage) - joint 1
+setp carvera.stepgen.z.position-scale [JOINT_1]SCALE
+setp carvera.stepgen.z.maxvel [JOINT_1]STEPGEN_MAXVEL
+setp carvera.stepgen.z.maxaccel [JOINT_1]STEPGEN_MAXACCEL
+
+net joint.z.position-cmd joint.1.motor-pos-cmd => carvera.stepgen.z.position-cmd
+net joint.z.position-fb carvera.stepgen.z.position-fb => joint.1.motor-pos-fb
+net joint.z.enable joint.1.amp-enable-out => carvera.stepgen.z.enable
+net joint.z.home carvera.input.home-z => joint.1.home-sw-in
+

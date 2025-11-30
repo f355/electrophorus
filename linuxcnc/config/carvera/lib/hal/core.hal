@@ -1,7 +1,9 @@
+# Proxxon PD 250/E lathe - core HAL setup
+
 loadrt [KINS]KINEMATICS
 loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
 
-loadrt electrophorus spi_freq=[CARVERA]SPI_FREQ  # 10 MHz
+loadrt electrophorus spi_freq=[LATHE]SPI_FREQ
 loadrt estop_latch names=estop-latch
 
 addf carvera.read servo-thread
@@ -9,9 +11,10 @@ addf motion-command-handler servo-thread
 addf motion-controller servo-thread
 addf estop-latch servo-thread
 
-######## estop, SPI comms, machine power
-net estop.user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-12v => carvera.output.power-24v
+# estop chain
+net estop.user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-24v
 net estop.user-request-enable iocontrol.0.user-request-enable => carvera.spi-reset => estop-latch.reset
 net estop.fault-in carvera.input.e-stop => estop-latch.fault-in
-net estop.carvera-status carvera.spi-status => estop-latch.ok-in
-net estop.status estop-latch.ok-out => iocontrol.0.emc-enable-in => carvera.output.work-light
+net estop.status-in carvera.spi-status => estop-latch.ok-in
+net estop.status-out estop-latch.ok-out => iocontrol.0.emc-enable-in
+
