@@ -136,8 +136,9 @@ button housing by removing the four screws on the top, re-plug the red wire from
 it back.
 
 If you are using the stock/community firmware, you need to start the machine with the button disconnected, type
-`config-set sd e_stop_pin 0.20!^` (for Carvera Air) or `config-set sd e_stop_pin 0.26!^` (for Carvera) in the MDI
-console, connect the button, and reset the machine.
+`config-set sd e_stop_pin 0.20!^` (for Carvera Air) or `config-set sd e_stop_pin 0.26^` (for Carvera) in the MDI
+console, connect the button, and reset the machine. If you need to go back to NO for some reason (you shouldn't), the
+command is the same, but with "!" removed/added.
 
 ## Setting up the software
 
