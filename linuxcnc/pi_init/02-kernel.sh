@@ -2,8 +2,7 @@
 
 set -e
 
-# pin kernel to 6.12.34, later versions are unstable as of 2025-10-17
-apt install -y linux-image-6.12.34+rpt-rpi-v8-rt
+apt install -y linux-image-6.12.62+rpt-rpi-v8-rt
 
 # switch to realtime kernel and enable UART
 cat >>/boot/firmware/config.txt <<EOF
