@@ -18,10 +18,13 @@ constexpr uint32_t DW_SPI_CTRLR0 = 0x00;
 constexpr uint32_t DW_SPI_SSIENR = 0x08;
 constexpr uint32_t DW_SPI_SER = 0x10;
 constexpr uint32_t DW_SPI_BAUDR = 0x14;
+constexpr uint32_t DW_SPI_TXFLR = 0x20;
 constexpr uint32_t DW_SPI_RXFLR = 0x24;
 constexpr uint32_t DW_SPI_IMR = 0x2c;
 constexpr uint32_t DW_SPI_ICR = 0x48;
 constexpr uint32_t DW_SPI_DR = 0x60;
+
+constexpr size_t DW_SPI_FIFO_DEPTH = 16;
 
 // GPIO: IO_BANK0 and PADS_BANK0 (only for basic setup of 8..11)
 constexpr unsigned long RP1_IO_BANK0 = 0x000D0000UL;
@@ -101,13 +104,23 @@ int Rpi5SpiDriver::Init(int frequency_hz) {
 }
 
 void Rpi5SpiDriver::Xfer(uint8_t* rx, const uint8_t* tx, size_t len) {
-  if (!spi_) return;
+  if (!spi_ || len == 0) return;
+
   Write(spi_, DW_SPI_SER, 1u << 0);  // assert CS0
-  for (size_t i = 0; i < len; ++i) {
-    Write(spi_, DW_SPI_DR, tx[i]);
-    while (Read(spi_, DW_SPI_RXFLR) == 0) {
+
+  size_t tx_idx = 0;
+  size_t rx_idx = 0;
+  while (rx_idx < len) {
+    // Push TX bytes while FIFO has space and RX isn't getting full
+    while (tx_idx < len && Read(spi_, DW_SPI_TXFLR) < DW_SPI_FIFO_DEPTH &&
+           Read(spi_, DW_SPI_RXFLR) < DW_SPI_FIFO_DEPTH - 4) {
+      Write(spi_, DW_SPI_DR, tx[tx_idx++]);
     }
-    rx[i] = static_cast<uint8_t>(Read(spi_, DW_SPI_DR));
+    // Pull RX bytes while FIFO has data
+    while (rx_idx < len && Read(spi_, DW_SPI_RXFLR) > 0) {
+      rx[rx_idx++] = static_cast<uint8_t>(Read(spi_, DW_SPI_DR));
+    }
   }
+
   Write(spi_, DW_SPI_SER, 0);  // deassert CS0
 }

@@ -27,7 +27,9 @@ constexpr uint32_t SPI0_CS_CLEAR_RX = 1u << 4;
 constexpr uint32_t SPI0_CS_CLEAR_TX = 1u << 5;
 constexpr uint32_t SPI0_CS_TA = 1u << 7;
 constexpr uint32_t SPI0_CS_DONE = 1u << 16;
+constexpr uint32_t SPI0_CS_RXD = 1u << 17;
 constexpr uint32_t SPI0_CS_TXD = 1u << 18;
+constexpr uint32_t SPI0_CS_RXR = 1u << 19;
 
 /* GPIO function select */
 constexpr uint32_t GPFSEL0 = 0x00;
@@ -92,26 +94,37 @@ int Rpi4SpiDriver::Init(int frequency_hz) {
 }
 
 void Rpi4SpiDriver::Xfer(uint8_t* rx, const uint8_t* tx, const size_t len) {
-  if (!spi0_) return;
-  for (size_t i = 0; i < len; ++i) {
-    uint32_t cs = Read(spi0_, SPI0_CS);
-    cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
-    Write(spi0_, SPI0_CS, cs);
+  if (!spi0_ || len == 0) return;
 
+  // Clear FIFOs and assert CS once
+  uint32_t cs = Read(spi0_, SPI0_CS);
+  cs |= (SPI0_CS_CLEAR_RX | SPI0_CS_CLEAR_TX);
+  Write(spi0_, SPI0_CS, cs);
+
+  cs = Read(spi0_, SPI0_CS);
+  cs &= ~SPI0_CS_CS_MASK;  // CS0
+  cs |= SPI0_CS_TA;        // assert CS
+  Write(spi0_, SPI0_CS, cs);
+
+  // Stream bytes through FIFO
+  size_t tx_idx = 0;
+  size_t rx_idx = 0;
+  while (rx_idx < len) {
     cs = Read(spi0_, SPI0_CS);
-    cs &= ~SPI0_CS_CS_MASK;  // CS0
-    cs |= SPI0_CS_TA;        // assert CS
-    Write(spi0_, SPI0_CS, cs);
-
-    while ((Read(spi0_, SPI0_CS) & SPI0_CS_TXD) == 0) {
+    // Push TX bytes while FIFO has space and RX isn't getting full
+    while (tx_idx < len && (cs & SPI0_CS_TXD) && !(cs & SPI0_CS_RXR)) {
+      Write(spi0_, SPI0_FIFO, tx[tx_idx++]);
+      cs = Read(spi0_, SPI0_CS);
     }
-    Write(spi0_, SPI0_FIFO, tx[i]);
-    while ((Read(spi0_, SPI0_CS) & SPI0_CS_DONE) == 0) {
+    // Pull RX bytes while FIFO has data
+    while (rx_idx < len && (cs & SPI0_CS_RXD)) {
+      rx[rx_idx++] = static_cast<uint8_t>(Read(spi0_, SPI0_FIFO));
+      cs = Read(spi0_, SPI0_CS);
     }
-    rx[i] = static_cast<uint8_t>(Read(spi0_, SPI0_FIFO));
-
-    cs = Read(spi0_, SPI0_CS);
-    cs &= ~SPI0_CS_TA;  // deassert CS
-    Write(spi0_, SPI0_CS, cs);
   }
+
+  // Deassert CS
+  cs = Read(spi0_, SPI0_CS);
+  cs &= ~SPI0_CS_TA;
+  Write(spi0_, SPI0_CS, cs);
 }
