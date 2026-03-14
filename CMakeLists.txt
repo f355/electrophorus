@@ -32,6 +32,7 @@ add_executable(${PROJECT_NAME}
         src/modules/gpio/digital_ins.cc
         src/modules/gpio/digital_outs.cc
         src/modules/gpio/pulse_counter.cc
+        src/modules/quadrature_encoder/quadrature_encoder.cc
         src/modules/pwm/pwm.cc
         src/modules/stepgen/stepgen.cc
         src/pin.cc
