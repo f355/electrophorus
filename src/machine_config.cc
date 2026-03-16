@@ -32,5 +32,5 @@ vector<Module*> MachineModules() {
           // Spindle PWM (WS55-220 speed control via RC filter)
           new PWM(1, 0, new Pin(2, 5)),
 
-          new QuadratureEncoder(0, 1, true, 10000)};
+          new QuadratureEncoder(0, 1, false, 10000)};
 }
