@@ -2,7 +2,7 @@
 
 #include "LPC17xx.h"
 #include "modules/module.h"
-#include "spi_protocol/machine_definitions.h"
+#include "machine_definitions.h"
 
 class DigitalOuts final : public Module {
   uint8_t num_pins_;

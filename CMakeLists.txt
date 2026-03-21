@@ -22,10 +22,12 @@ else ()
     set(UPLOAD_METHOD NONE)
 endif ()
 
+set(MACHINE "carvera_air" CACHE STRING "Machine definition to build for")
+
 add_subdirectory(mbed-os)
 
 add_executable(${PROJECT_NAME}
-        src/machine_config.cc
+        linuxcnc/hal_comps/machines/${MACHINE}/machine_config.cc
         src/main.cc
         src/modules/adc/adc.cc
         src/modules/e_stop/e_stop.cc
@@ -41,7 +43,7 @@ add_executable(${PROJECT_NAME}
         src/stepgen_ticker.cc
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC . src linuxcnc/hal_comps)
+target_include_directories(${PROJECT_NAME} PUBLIC . src linuxcnc/hal_comps linuxcnc/hal_comps/machines/${MACHINE})
 
 target_link_libraries(${PROJECT_NAME} mbed-baremetal)
 

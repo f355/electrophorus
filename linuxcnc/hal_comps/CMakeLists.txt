@@ -6,6 +6,8 @@ project(${COMPONENT_NAME} LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(MACHINE "carvera_air" CACHE STRING "Machine definition to build for")
+
 # Find LinuxCNC headers (installed by linuxcnc-uspace-dev)
 find_path(LINUXCNC_INCLUDE_DIR hal.h
         PATH_SUFFIXES linuxcnc
@@ -24,7 +26,7 @@ add_library(${COMPONENT_NAME}_objs OBJECT
 # Align compile flags/defs with halcompile Makefile.modinc (uspace)
 target_include_directories(${COMPONENT_NAME}_objs SYSTEM PRIVATE ${LINUXCNC_INCLUDE_DIR})
 
-target_include_directories(${COMPONENT_NAME}_objs PRIVATE .)
+target_include_directories(${COMPONENT_NAME}_objs PRIVATE . machines/${MACHINE})
 
 target_compile_definitions(${COMPONENT_NAME}_objs PRIVATE RTAPI realtime _GNU_SOURCE __MODULE__ SIM)
 target_compile_options(${COMPONENT_NAME}_objs PRIVATE
@@ -121,7 +123,7 @@ endif ()
 
 target_include_directories(${COMPONENT_NAME} SYSTEM PRIVATE ${LINUXCNC_INCLUDE_DIR})
 
-target_include_directories(${COMPONENT_NAME} PRIVATE .)
+target_include_directories(${COMPONENT_NAME} PRIVATE . machines/${MACHINE})
 
 # halcompile links -lm by default
 target_link_libraries(${COMPONENT_NAME} PRIVATE m)

@@ -167,10 +167,11 @@ git clone https://github.com/f355/electrophorus.git
 cd electrophorus
 ```
 
-...and run the installer script:
+...and run the installer script, specifying the machine you're building for (the only supported machine at the moment
+is `carvera_air`):
 
 ```bash
-./install.sh
+./install.sh carvera_air
 ```
 
 It would take a while, be patient. After finishing, the installer would ask you to reboot the Raspberry Pi. Do that by
@@ -190,7 +191,7 @@ Raspberry Pi or a terminal on the remote desktop:
 
 ```bash
 cd ~/electrophorus
-./flash.sh
+./flash.sh carvera_air
 ```
 
 If the machine beeps and reboots, it has worked.

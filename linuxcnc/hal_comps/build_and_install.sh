@@ -16,7 +16,8 @@ BUILD_DIR="${SCRIPT_DIR}/cmake-build-release"
 # Configure
 cmake -S "${SCRIPT_DIR}" -B "${BUILD_DIR}" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  "$@"
 
 # Build
 cmake --build "${BUILD_DIR}" -j"$(nproc)"

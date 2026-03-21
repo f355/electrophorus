@@ -12,6 +12,19 @@
 
 // Carvera Air CA1 configuration
 
+const SpiConfig& MachineSpiConfig() {
+  static constexpr SpiConfig config = {
+      .mosi = P0_18,
+      .miso = P0_17,
+      .sck = P0_15,
+      .ssel = P0_16,
+      .ssp = LPC_SSP0,
+      .dma_conn_tx = 0,  // SSP0 TX (UM10360 Table 544)
+      .dma_conn_rx = 1,  // SSP0 RX
+  };
+  return config;
+}
+
 void MachineInit() {
   // the beeper is obnoxious, shut it up first thing
   (new Pin(1, 14))->AsOutput()->Set(false);

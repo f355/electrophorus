@@ -3,9 +3,9 @@
 #include <vector>
 
 #include "LPC17xx.h"
+#include "machine_definitions.h"
 #include "mbed.h"
 #include "modules/module.h"
-#include "spi_protocol/machine_definitions.h"
 
 void StepgenTicker::Start() const {
   LPC_SC->PCONP |= (1 << 1);          // power on the timer 0

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "machinedef_types.h"
+#include "spi_protocol/machinedef_types.h"
 
 constexpr auto kStepgenTickFrequency = 100'000;  // 100 kHz
 

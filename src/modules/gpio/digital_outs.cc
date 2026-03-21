@@ -5,7 +5,7 @@
 #include "LPC17xx.h"
 #include "pin.h"
 #include "spi_comms.h"
-#include "spi_protocol/machine_definitions.h"
+#include "machine_definitions.h"
 
 DigitalOuts::DigitalOuts(const uint8_t num_pins, const outputPin_t pins[])
     : num_pins_(num_pins),
