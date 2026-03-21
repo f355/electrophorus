@@ -1,0 +1,20 @@
+# Proxxon PD 250/E lathe - WS55-220 spindle control
+
+loadrt scale names=scale.spindle-speed
+
+addf scale.spindle-speed servo-thread
+
+# PWM period (50us = 20kHz)
+setp carvera.output-var.pwm-period-us [LATHE]PWM_PERIOD_US
+
+# speed command -> PWM duty
+# gain = 1.0 / max_rpm * 100 (for percentage)
+# e.g. 3000 RPM max: gain = 100/3000 = 0.033
+setp scale.spindle-speed.gain [LATHE]SPINDLE_GAIN
+net spindle.speed-cmd spindle.0.speed-out => scale.spindle-speed.in
+net spindle.speed-pwm scale.spindle-speed.out => carvera.output-var.spindle-duty
+
+# spindle enable/direction
+net spindle.on spindle.0.on => carvera.output.spindle-enable
+net spindle.fwd spindle.0.forward => carvera.output.spindle-dir
+
