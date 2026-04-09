@@ -43,14 +43,16 @@ from tmc_driver.com import TmcComUart
 # At 115200 baud, TmcComUart calculates communication_pause and ser.timeout
 # using integer division (500 // 115200 = 0, 20000 // 115200 = 0), resulting
 # in zero-second timeouts. Reads return immediately with empty data before the
-# TMC2209 has time to respond.
+# TMC2209 has time to respond. Use float division with sensible minimums.
 class TmcComUartFixed(TmcComUart):
     """TmcComUart with fixed timeouts for high baud rates."""
     def init(self):
         super().init()
-        self.communication_pause = max(self.communication_pause, 0.005)
+        # ~1ms pause between transactions — a 12-byte frame at 115200 takes ~1ms
+        self.communication_pause = max(500.0 / self.ser.baudrate, 0.001)
         if self.ser is not None:
-            self.ser.timeout = max(self.ser.timeout, 0.1)
+            # 20ms read timeout — TMC2209 reply comes in <2ms, this is generous
+            self.ser.timeout = max(20000.0 / self.ser.baudrate, 0.02)
 
 POLL_INTERVAL_S = 1.0
 COMPONENT_NAME = "tmc2209"
