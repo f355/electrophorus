@@ -26,3 +26,6 @@ cmake --build "${BUILD_DIR}" -j"$(nproc)"
 sudo cmake --install "${BUILD_DIR}"
 sudo halcompile --install "${SCRIPT_DIR}/level_map.comp"
 sudo halcompile --install "${SCRIPT_DIR}/probe_helper.comp"
+
+# Install userspace components
+sudo install -m 755 "${SCRIPT_DIR}/tmc2209_config.py" /usr/bin/tmc2209_config

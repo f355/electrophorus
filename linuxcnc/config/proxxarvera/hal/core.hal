@@ -6,13 +6,18 @@ loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EM
 loadrt electrophorus spi_freq=[LATHE]SPI_FREQ
 loadrt estop_latch names=estop-latch
 
+# TMC2209 driver configuration (UART)
+loadusr -W tmc2209_config -n tmc2209 \
+    --serial [TMC2209]SERIAL --baud [TMC2209]BAUD \
+    --addr [TMC2209]ADDR --names [TMC2209]NAMES
+
 addf carvera.read servo-thread
 addf motion-command-handler servo-thread
 addf motion-controller servo-thread
 addf estop-latch servo-thread
 
 # estop chain
-net estop.user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-12v => carvera.output.power-24v
+net estop.user-enable-out iocontrol.0.user-enable-out => carvera.spi-enable => carvera.output.power-12v => carvera.output.power-24v => tmc2209.enable
 net estop.user-request-enable iocontrol.0.user-request-enable => carvera.spi-reset => estop-latch.reset
 net estop.fault-in carvera.input.e-stop => estop-latch.fault-in
 net estop.status-in carvera.spi-status => estop-latch.ok-in
