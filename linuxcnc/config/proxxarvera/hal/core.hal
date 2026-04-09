@@ -7,7 +7,7 @@ loadrt electrophorus spi_freq=[LATHE]SPI_FREQ
 loadrt estop_latch names=estop-latch
 
 # TMC2209 driver configuration (UART)
-loadusr -W tmc2209_config -n tmc2209 \
+loadusr -Wn tmc2209 tmc2209_config -n tmc2209 \
     --serial [TMC2209]SERIAL --baud [TMC2209]BAUD \
     --addr [TMC2209]ADDR --names [TMC2209]NAMES
 
