@@ -40,6 +40,18 @@ import time
 from tmc_driver import Tmc2209, Loglevel
 from tmc_driver.com import TmcComUart
 
+# At 115200 baud, TmcComUart calculates communication_pause and ser.timeout
+# using integer division (500 // 115200 = 0, 20000 // 115200 = 0), resulting
+# in zero-second timeouts. Reads return immediately with empty data before the
+# TMC2209 has time to respond.
+class TmcComUartFixed(TmcComUart):
+    """TmcComUart with fixed timeouts for high baud rates."""
+    def init(self):
+        super().init()
+        self.communication_pause = max(self.communication_pause, 0.005)
+        if self.ser is not None:
+            self.ser.timeout = max(self.ser.timeout, 0.1)
+
 POLL_INTERVAL_S = 1.0
 COMPONENT_NAME = "tmc2209"
 
@@ -200,7 +212,7 @@ def init_and_configure(args, addrs, names, h):
     drivers = []
     for addr, axis_name in zip(addrs, names):
         try:
-            com = TmcComUart(args.serial, args.baud)
+            com = TmcComUartFixed(args.serial, args.baud)
             tmc = Tmc2209(
                 tmc_ec=None,
                 tmc_mc=None,
