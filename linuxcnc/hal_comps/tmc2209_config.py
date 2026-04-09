@@ -188,32 +188,36 @@ def poll_status(tmc, h, axis_name):
         h[f"{prefix}.fault"] = True
 
 
-def init_drivers(args, addrs, names):
-    """Create Tmc2209 instances (does NOT do any UART communication)."""
+def init_and_configure(args, addrs, names, h):
+    """Create Tmc2209 instances and configure them.
+
+    Driver instantiation is deferred to here because the Tmc2209 constructor
+    does UART communication (clears GSTAT), so drivers must be powered first.
+
+    Returns (drivers, ok) where drivers is a list of (tmc, axis_name) tuples
+    and ok indicates whether all drivers were configured successfully.
+    """
     drivers = []
     for addr, axis_name in zip(addrs, names):
-        com = TmcComUart(args.serial, args.baud)
-        tmc = Tmc2209(
-            tmc_ec=None,
-            tmc_mc=None,
-            tmc_com=com,
-            driver_address=addr,
-            loglevel=Loglevel.INFO,
-            logprefix=f"TMC2209-{axis_name}",
-        )
-        drivers.append((tmc, axis_name))
-    return drivers
-
-
-def configure_all(drivers, h):
-    """Configure all drivers. Returns True if all succeeded."""
-    for tmc, axis_name in drivers:
         try:
+            com = TmcComUart(args.serial, args.baud)
+            tmc = Tmc2209(
+                tmc_ec=None,
+                tmc_mc=None,
+                tmc_com=com,
+                driver_address=addr,
+                loglevel=Loglevel.INFO,
+                logprefix=f"TMC2209-{axis_name}",
+            )
             configure_driver(tmc, h, axis_name)
+            drivers.append((tmc, axis_name))
         except Exception as e:
-            log.error("%s: configuration failed: %s", axis_name, e)
-            return False
-    return True
+            log.error("%s: init/configuration failed: %s", axis_name, e)
+            # Clean up any drivers we already created
+            for t, _ in drivers:
+                t.deinit()
+            return [], False
+    return drivers, True
 
 
 def main():
@@ -240,7 +244,7 @@ def main():
     h.ready()
     log.info("Component '%s' ready, waiting for 'enable' pin", args.name)
 
-    drivers = init_drivers(args, addrs, names)
+    drivers = []
     was_enabled = False
 
     try:
@@ -248,10 +252,13 @@ def main():
             enabled = h["enable"]
 
             if enabled and not was_enabled:
-                # Rising edge: drivers just got power, configure them.
+                # Rising edge: drivers just got power.
+                # Clean up any stale driver objects from a previous cycle.
+                for tmc, _ in drivers:
+                    tmc.deinit()
                 # Give the TMC2209 a moment to finish its power-on reset.
                 time.sleep(0.1)
-                ok = configure_all(drivers, h)
+                drivers, ok = init_and_configure(args, addrs, names, h)
                 h["configured"] = ok
                 if ok:
                     log.info("All drivers configured")
@@ -261,6 +268,9 @@ def main():
             elif not enabled and was_enabled:
                 # Falling edge: drivers lost power, mark unconfigured
                 h["configured"] = False
+                for tmc, _ in drivers:
+                    tmc.deinit()
+                drivers = []
                 log.info("Enable de-asserted, drivers unconfigured")
 
             was_enabled = enabled
